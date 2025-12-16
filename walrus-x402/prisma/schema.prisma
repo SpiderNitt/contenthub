@@ -1,0 +1,59 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+  engineType = "binary"
+}
+
+model User {
+  id            String   @id @default(uuid())
+  privyUserId   String   @unique // From Privy
+  walletAddress String   @unique // Store as lowercase for consistency
+  createdAt     DateTime @default(now())
+  subscriptions Subscription[]
+}
+
+model Creator {
+  address       String   @id // Wallet address
+  profileUri    String?  // Walrus URI for JSON profile
+  plans         Plan[]
+}
+
+model Plan {
+  id            String   @id @default(uuid())
+  creatorAddress String
+  tierId        Int      // 0=Free, 1=Basic, 2=Premium
+  priceUsdc     String   // BigInt as String (wei-like precision if needed, or 6 decimals)
+  periodSeconds Int
+  creator       Creator  @relation(fields: [creatorAddress], references: [address])
+  subscriptions Subscription[]
+  // Composite unique constraint if supported, or handle logic in app
+  @@unique([creatorAddress, tierId])
+}
+
+model Subscription {
+  id            String   @id @default(uuid())
+  userId        String
+  creatorAddress String
+  tierId        Int
+  startsAt      DateTime
+  expiresAt     DateTime
+  status        String   // ACTIVE, EXPIRED
+  user          User     @relation(fields: [userId], references: [id])
+  // We can't strictly FK both fields easily to Plan with composite key without more setup, 
+  // so relating to Plan via PlanID is better or keep it loose.
+  // Updated attempt to map to Plan properly:
+  plan          Plan     @relation(fields: [creatorAddress, tierId], references: [creatorAddress, tierId])
+}
+
+model PaymentAttempt {
+  id             String   @id @default(uuid())
+  idempotencyKey String   @unique
+  userWallet     String
+  amount         String
+  state          String   // INITIATED, SUBMITTED, VERIFIED, SETTLED, FAILED
+  createdAt      DateTime @default(now())
+}

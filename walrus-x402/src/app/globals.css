@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-manrope);
+  --font-mono: var(--font-geist-mono);
+}
+

@@ -1,0 +1,42 @@
+
+> walrus-x402@0.1.0 build
+> next build --webpack
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of /Users/shikhar/package-lock.json as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * /Users/shikhar/Marketplace/walrus-x402/package-lock.json
+
+   ▲ Next.js 16.0.9 (webpack)
+   - Environments: .env
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 8.1s
+   Skipping validation of types
+   Collecting page data using 7 workers ...
+Error [PrismaClientConstructorValidationError]: Using engine type "client" requires either "adapter" or "accelerateUrl" to be provided to PrismaClient constructor.
+Read more at https://pris.ly/d/client-constructor
+    at 32038 (.next/server/app/api/content/[id]/authorize/route.js:1:7845)
+    at g (.next/server/webpack-runtime.js:1:151)
+    at 23078 (.next/server/app/api/content/[id]/authorize/route.js:1:974)
+    at g (.next/server/webpack-runtime.js:1:151)
+    at <unknown> (.next/server/app/api/content/[id]/authorize/route.js:1:9876)
+    at g.X (.next/server/webpack-runtime.js:1:1277)
+    at <unknown> (.next/server/app/api/content/[id]/authorize/route.js:1:9852)
+Error [PrismaClientConstructorValidationError]: Using engine type "client" requires either "adapter" or "accelerateUrl" to be provided to PrismaClient constructor.
+Read more at https://pris.ly/d/client-constructor
+    at 32038 (.next/server/app/api/x402/subscribe/route.js:1:8123)
+    at g (.next/server/webpack-runtime.js:1:151)
+    at 10760 (.next/server/app/api/x402/subscribe/route.js:1:771)
+    at g (.next/server/webpack-runtime.js:1:151)
+    at <unknown> (.next/server/app/api/x402/subscribe/route.js:1:10151)
+    at g.X (.next/server/webpack-runtime.js:1:1277)
+    at <unknown> (.next/server/app/api/x402/subscribe/route.js:1:10127)
+
+> Build error occurred
+Error: Failed to collect page data for /api/content/[id]/authorize
+    at ignore-listed frames {
+  type: 'Error'
+}
