@@ -1,0 +1,150 @@
+//SPDX-License-Identifier: MIT
+
+pragma solidity ^0.8.30;
+
+contract CreatorHub {
+    /* 
+     * Video Showcase & Creator Registry Logic
+     */
+
+    struct Video {
+        string title;
+        string videoCID;
+        string thumbnailCID;
+        address uploader;
+        uint256 timestamp;
+    }
+
+    struct Creator {
+        string name;
+        address wallet;
+        bool isRegistered;
+    }
+
+    // Mapping from wallet to Creator
+    mapping(address => Creator) public cret;
+    // Array of all videos for showcase
+    Video[] public allVideos;
+    
+    // Original CreatorHub Logic for Content management (simplified/integrated)
+    enum ContentType {
+        VIDEO,
+        ARTICLE,
+        PODCAST,
+        AUDIO,
+        NEWSLETTER,
+        OTHER
+    }
+
+    struct Content {
+        address creatorAddress;
+        ContentType cType;
+        string metadataURI;
+        bool isFree;
+        uint256 fullPrice;
+        uint256 rentedPrice; 
+        address paymentToken; 
+        bool active;
+    }
+    
+    uint256 public nextContentId;
+    mapping(uint256 => Content) public contents;
+
+    event ChannelRegistered(address indexed wallet, string name);
+    event VideoUploaded(uint256 indexed videoId, address indexed uploader, string title);
+
+    function registerChannel(string memory _name) external {
+        require(bytes(_name).length > 0, "Name required");
+        require(!cret[msg.sender].isRegistered, "Already registered");
+        
+        cret[msg.sender] = Creator({
+            name: _name,
+            wallet: msg.sender,
+            isRegistered: true
+        });
+
+        emit ChannelRegistered(msg.sender, _name);
+    }
+
+    function getChannelName(address _wallet) external view returns (string memory) {
+        if (cret[_wallet].isRegistered) {
+            return cret[_wallet].name;
+        }
+        return "Unknown Channel";
+    }
+
+    function uploadVideo(
+        string memory _title,
+        string memory _videoCID,
+        string memory _thumbnailCID
+    ) external {
+        require(cret[msg.sender].isRegistered, "Must register channel first");
+        
+        Video memory newVideo = Video({
+            title: _title,
+            videoCID: _videoCID,
+            thumbnailCID: _thumbnailCID,
+            uploader: msg.sender,
+            timestamp: block.timestamp
+        });
+
+        allVideos.push(newVideo);
+        emit VideoUploaded(allVideos.length - 1, msg.sender, _title);
+    }
+
+    function getLatestVideos(uint256 _limit) external view returns (Video[] memory) {
+        uint256 totalVideos = allVideos.length;
+        if (totalVideos == 0) {
+            return new Video[](0);
+        }
+
+        uint256 count = _limit;
+        if (count > totalVideos) {
+            count = totalVideos;
+        }
+
+        Video[] memory recentVideos = new Video[](count);
+        for (uint256 i = 0; i < count; i++) {
+            recentVideos[i] = allVideos[totalVideos - 1 - i];
+        }
+        return recentVideos;
+    }
+
+    // Original Content Link Functionality (kept for compatibility if needed, using new Creator check)
+    function createContent(
+        ContentType cType,
+        string memory metadataURI,
+        bool isFree,
+        uint256 fullPrice,
+        uint256 rentedPrice,
+        address paymentToken
+    ) external returns (uint256) {
+        require(cret[msg.sender].isRegistered, "Only registered creators can create content");
+        require(bytes(metadataURI).length > 0, "Invalid metadataURI");
+        
+        if (isFree) {
+            require(fullPrice == 0, "Free content fullPrice must be 0");
+            require(rentedPrice == 0, "Free content rentedPrice must be 0");
+        } else {
+            require(paymentToken != address(0), "Payment token required");
+            require(rentedPrice > 0, "rentedPrice must be > 0");
+            require(fullPrice >= rentedPrice, "fullPrice must be >= rentedPrice");
+        }
+        
+        uint256 contentId = nextContentId++;
+        contents[contentId] = Content({
+            creatorAddress: msg.sender,
+            cType: cType,
+            metadataURI: metadataURI,
+            isFree: isFree,
+            fullPrice: fullPrice,
+            rentedPrice: rentedPrice,
+            paymentToken: paymentToken,
+            active: true
+        });
+        
+        return contentId;
+    }
+
+    // ... other legacy update functions would go here if needed ...
+}

@@ -3,8 +3,12 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
 const PRIVY_APP_SECRET = process.env.PRIVY_APP_SECRET;
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
-const privy = new PrivyClient(PRIVY_APP_ID || '', PRIVY_APP_SECRET || '');
+// Only initialize Privy if credentials are available
+const privy = (PRIVY_APP_ID && PRIVY_APP_SECRET)
+  ? new PrivyClient(PRIVY_APP_ID, PRIVY_APP_SECRET)
+  : null;
 
 export async function verifyPrivyToken(req: NextRequest) {
   const authHeader = req.headers.get('authorization');
@@ -14,29 +18,40 @@ export async function verifyPrivyToken(req: NextRequest) {
 
   const token = authHeader.replace('Bearer ', '');
 
-  try {
-    // If no credentials pending (dev mode), maybe mock or fail?
-    // For now, we attempt verification if creds exist.
-    if (!PRIVY_APP_ID || !PRIVY_APP_SECRET) {
-      console.warn("Privy credentials missing. Authentication not verified fully (DEV MODE).");
-      // Return a mock claim for development so the app is usable without secrets
-      return {
-        userId: 'did:privy:mock-user-id',
-        appId: 'mock-app-id',
-        issuer: 'privy.io',
-        issuedAt: Date.now() / 1000,
-        expiration: Date.now() / 1000 + 3600
-      };
+  // CRITICAL: In production, fail if credentials are missing
+  if (!PRIVY_APP_ID || !PRIVY_APP_SECRET || !privy) {
+    if (IS_PRODUCTION) {
+      console.error('[AUTH] Privy credentials missing in production!');
+      return null;
     }
 
+    // Development mode only - return mock user
+    console.warn('[AUTH] Privy credentials missing. Using mock user (DEV MODE ONLY)');
+    return {
+      userId: 'did:privy:dev-mock-user',
+      appId: 'dev-mock-app',
+      issuer: 'privy.io',
+      issuedAt: Date.now() / 1000,
+      expiration: Date.now() / 1000 + 3600
+    };
+  }
+
+  try {
     const verifiedClaims = await privy.verifyAuthToken(token);
     return verifiedClaims;
   } catch (error) {
-    console.warn('Privy verification failed, falling back to mock user (DEV MODE):', error);
-    // Fallback for dev/demo if verification fails (e.g. bad secret)
+    console.error('[AUTH] Token verification failed:', error);
+
+    // CRITICAL: In production, fail authentication
+    if (IS_PRODUCTION) {
+      return null;
+    }
+
+    // Development mode only - return mock user
+    console.warn('[AUTH] Verification failed, using mock user (DEV MODE ONLY)');
     return {
-      userId: 'did:privy:mock-user-id',
-      appId: 'mock-app-id',
+      userId: 'did:privy:dev-mock-user',
+      appId: 'dev-mock-app',
       issuer: 'privy.io',
       issuedAt: Date.now() / 1000,
       expiration: Date.now() / 1000 + 3600

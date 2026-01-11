@@ -1,0 +1,10 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+
+[rpc_endpoints]
+baseSepolia = "${BASE_SEPOLIA_RPC_URL}"
+
+[etherscan]
+baseSepolia = { key = "${ETHERSCAN_API_KEY}" }

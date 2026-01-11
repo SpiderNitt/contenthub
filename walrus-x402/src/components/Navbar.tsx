@@ -17,7 +17,10 @@ export default function Navbar() {
     const navLinks = [
         { href: '/explore', label: 'Explore' },
         { href: '/creators', label: 'Creators' },
-        ...(authenticated ? [{ href: '/library', label: 'My Library' }] : [])
+        ...(authenticated ? [
+            { href: '/library', label: 'My Library' },
+            { href: '/dashboard', label: 'Dashboard' }
+        ] : [])
     ];
 
     return (
@@ -28,7 +31,7 @@ export default function Navbar() {
                     <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center group-hover:scale-105 transition-transform">
                         <span className="font-bold text-white text-lg">W</span>
                     </div>
-                    <span className="font-bold text-white tracking-tight">Walrus<span className="text-cyan-400">Hub</span></span>
+                    <span className="font-bold text-white tracking-tight">Content<span className="text-cyan-400">Hub</span></span>
                 </Link>
 
                 {/* Links */}

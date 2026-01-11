@@ -1,79 +1,104 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyPrivyToken, unauthorizedResponse } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
-import { createHmac } from 'crypto';
+import { isValidBlobId, isValidWalletAddress, createSignature } from '@/lib/validation';
+import { checkContentAccess } from '@/lib/subscription';
 
-const SIGNING_SECRET = process.env.WALRUS_SIGNING_SECRET || 'dev-secret';
+const SIGNING_SECRET = process.env.CONTENT_SIGNING_SECRET;
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const params = await props.params;
+
+    // Validate contentId format
+    const { id: contentId } = params;
+    console.log(`[API] Authorize request for ID: ${contentId}`);
+
+    if (!isValidBlobId(contentId)) {
+        console.error(`[API] Invalid Blob ID: ${contentId}`);
+        // Allow numeric IDs for premium content
+        if (!/^\d+$/.test(contentId)) {
+            return NextResponse.json({
+                error: 'Invalid content ID format'
+            }, { status: 400 });
+        }
+    }
 
     const userClaims = await verifyPrivyToken(req);
     if (!userClaims) {
         return unauthorizedResponse();
     }
 
-    const { id: contentId } = params;
+    // CRITICAL: Fail if signing secret is missing in production
+    if (!SIGNING_SECRET) {
+        if (IS_PRODUCTION) {
+            console.error('[AUTHORIZE] Signing secret missing in production!');
+            return NextResponse.json({
+                error: 'Service configuration error'
+            }, { status: 500 });
+        }
+        console.warn('[AUTHORIZE] Using dev secret (DEV MODE ONLY)');
+    }
 
-    // 1. Fetch content metadata. 
-    // In a real app, we sync ContentRegistry events to DB.
-    // We assume we have a Content model or similar, or we query the contract.
-    // For this prototype, let's assume valid requests check DB or we allow all for demo if subscribed to Creator.
-    // We need to know who the CREATOR is for this Content ID.
+    const signingSecret = SIGNING_SECRET || 'dev-secret-only-for-local-testing';
 
-    // MOCK: In production, lookup Content in DB -> get Creator & Tier.
-    // Here, we'll expect the client to send Creator Address in body? Or assume a mapping?
-    // Let's assume the body contains the creator address for efficiency in this demo phase, or we skip tier check if simple.
-    // BETTER: Mock DB lookup.
-    const mockContentDB = {
-        [contentId]: { creatorAddress: "0xCreatorAddress", minTier: 1 }
-    };
+    // Parse and validate request body
+    let body;
+    try {
+        body = await req.json();
+    } catch (e) {
+        return NextResponse.json({
+            error: 'Invalid JSON body'
+        }, { status: 400 });
+    }
 
-    // Ideally, use a real DB model:
-    // const content = await prisma.content.findUnique({ where: { id: contentId } });
+    const creatorAddress = body.creatorAddress;
 
-    // Dynamic body fallback needed for demo?
-    const body = await req.json().catch(() => ({}));
-    const creatorAddress = body.creatorAddress || "0xCreatorAddress"; // Fallback
-    const minTier = body.minTier || 1;
+    // Validate creator address if provided
+    if (creatorAddress && !isValidWalletAddress(creatorAddress)) {
+        return NextResponse.json({
+            error: 'Invalid creator address format'
+        }, { status: 400 });
+    }
 
-    // 2. Check Subscription (MOCK)
-    // In a real app, query DB: prisma.subscription.findFirst(...)
-    // For this Mock/Demo environment without a DB, we allow access if the user is authenticated.
-    // The client-side "userTier" state already handles the UI gating.
-    // This server-side check would normally verify that state against the DB.
+    // Get user's wallet address from Privy claims
+    // Note: userClaims.userId might be the wallet address or a Privy user ID
+    // In production, you'd need to map this to the actual wallet address
+    const userWalletAddress = userClaims.userId; // Assuming this is the wallet address
 
-    // Attempting to simulate "Found User & Subscription"
-    const mockUser = { id: 'mock-user-id', walletAddress: '0xMockWallet' };
+    if (!isValidWalletAddress(userWalletAddress)) {
+        return NextResponse.json({
+            error: 'Invalid user wallet address'
+        }, { status: 400 });
+    }
 
-    // We assume authorized for demo purposes if token is valid.
-    const isAuthorized = true;
+    // Check on-chain access
+    const accessCheck = await checkContentAccess(
+        userWalletAddress as `0x${string}`,
+        contentId,
+        creatorAddress as `0x${string}`
+    );
 
-    if (!isAuthorized) {
+    if (!accessCheck.hasAccess) {
         return NextResponse.json({
             authorized: false,
-            error: 'Subscription required',
-            requiredTier: minTier
+            error: 'Access denied',
+            reason: accessCheck.reason
         }, { status: 403 });
     }
 
-    // Continue to generate instruction...
-    const user = mockUser; // Use mock user for payload construction
-
-    // 3. Generate Signed Fetch Instruction
-    // This JSON is what the frontend sends to the Walrus Aggregator (or player logic) to prove right to access.
-    const expiry = Date.now() + 3600 * 1000; // 1 hour
+    // Generate Signed Fetch Instruction with timestamp validation
+    const now = Date.now();
+    const expiry = now + 3600 * 1000; // 1 hour
     const payload = {
-        blobId: contentId, // Assuming contentId IS the blobId or maps to it
-        userWallet: user.walletAddress,
+        blobId: contentId,
+        userWallet: userWalletAddress,
+        issuedAt: now,
         expiry,
         nonce: Math.floor(Math.random() * 1000000)
     };
 
-    // Sign it
-    const signature = createHmac('sha256', SIGNING_SECRET)
-        .update(JSON.stringify(payload))
-        .digest('hex');
+    // Create signature
+    const signature = createSignature(payload, signingSecret);
 
     const fetchInstruction = {
         ...payload,
@@ -82,6 +107,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
 
     return NextResponse.json({
         authorized: true,
-        fetchInstruction
+        fetchInstruction,
+        accessReason: accessCheck.reason
     });
 }

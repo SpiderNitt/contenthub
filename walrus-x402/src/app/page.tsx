@@ -4,7 +4,6 @@ import { usePrivy } from '@privy-io/react-auth';
 import Link from 'next/link';
 import { ArrowRight, Play, Globe, ShieldCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
-import StatsTicker from '@/components/StatsTicker';
 import FeaturedCreators from '@/components/FeaturedCreators';
 
 export default function Home() {
@@ -34,7 +33,7 @@ export default function Home() {
             The Future of Content.
           </h1>
           <p className="text-xl md:text-2xl text-slate-400 max-w-3xl mx-auto leading-relaxed">
-            The first premium content marketplace powered by Walrus storage and x402 payments.
+            The first premium content marketplace powered by decentralized storage and x402 payments.
             <span className="text-slate-200 block mt-2">Fully decentralized. Censorship resistant. Creator owned.</span>
           </p>
         </motion.div>
@@ -69,17 +68,14 @@ export default function Home() {
         </motion.div>
       </section>
 
-      {/* Stats Ticker */}
-      <StatsTicker />
-
       {/* Features Grid */}
       <section className="grid grid-cols-1 md:grid-cols-3 gap-8 py-20 relative">
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-cyan-900/5 to-transparent -z-10" />
         {[
           {
             icon: <Globe className="w-10 h-10 text-cyan-400" />,
-            title: "Walrus Storage",
-            desc: "Content is stored decentralized on Walrus blobs, ensuring permanence, lower costs, and censorship resistance."
+            title: "Decentralized Storage",
+            desc: "Content is stored on decentralized infrastructure, ensuring permanence, lower costs, and censorship resistance."
           },
           {
             icon: <ShieldCheck className="w-10 h-10 text-blue-400" />,
@@ -119,7 +115,7 @@ export default function Home() {
 
         <div className="relative z-10 text-center space-y-6 p-6">
           <h2 className="text-4xl md:text-6xl font-bold text-white tracking-tight">
-            Originals.<br />Only on WalrusHub.
+            Originals.<br />Only on ContentHub.
           </h2>
           <p className="text-slate-300 max-w-md mx-auto text-lg">
             Join thousands of users streaming premium Web3 content.

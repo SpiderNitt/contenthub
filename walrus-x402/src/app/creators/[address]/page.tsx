@@ -1,191 +1,379 @@
 'use client';
 
-import { useState, use } from 'react';
-import { notFound } from 'next/navigation';
-import { motion } from 'framer-motion';
-import { Shield, Lock, Play, Star } from 'lucide-react';
-import SubscriptionModal from '@/components/SubscriptionModal';
+import { useState, use, useEffect } from 'react';
+import { Shield, Lock, Play, CheckCircle, Upload, Wallet, Loader2 } from 'lucide-react';
 import Link from 'next/link';
-import { usePrivy } from '@privy-io/react-auth';
+import { usePrivy, useWallets } from '@privy-io/react-auth';
+import { useSubscription } from '@/hooks/useSubscription';
+import { createPublicClient, createWalletClient, custom, formatEther, http } from 'viem';
+import { baseSepolia } from 'viem/chains';
+import { CREATOR_HUB_ADDRESS, CREATOR_HUB_ABI, NEXT_PUBLIC_IPFS_GATEWAY } from '@/config/constants';
+import { motion } from 'framer-motion';
 
-// Mock Data (Ideally fetched based on params.address)
-const CREATOR_DATA = {
-    name: 'Crypto Studios',
-    bio: 'Documenting the decentralized revolution.',
-    avatar: 'https://images.unsplash.com/photo-1614680376593-902f74cf0d41?q=80&w=2574&auto=format&fit=crop',
-    cover: 'https://images.unsplash.com/photo-1639322537228-ad71c429d243?q=80&w=2664&auto=format&fit=crop',
-    stats: { subscribers: '1.2k', videos: 45, articles: 12 },
-    plans: [
-        { id: 'basic', tierId: 1, name: 'Basic Tier', price: '5.00', period: 'month', features: ['Access to articles', 'Weekly newsletter'] },
-        { id: 'premium', tierId: 2, name: 'Premium Tier', price: '15.00', period: 'month', features: ['All Basic features', 'Full video library', 'Early access', 'Community Discord'] }
-    ],
-    content: [
-        { id: '1', title: 'The Merge: Untold Stories', type: 'video', tier: 2, thumbnail: 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?q=80&w=2664&auto=format&fit=crop', date: '2 days ago' },
-        { id: '2', title: 'Layer 3 Thesis', type: 'article', tier: 1, thumbnail: 'https://images.unsplash.com/photo-1620325867502-221cfb5faa5f?q=80&w=2657&auto=format&fit=crop', date: '1 week ago' },
-        { id: '3', title: 'Public Roadmap', type: 'article', tier: 0, thumbnail: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=80&w=2670&auto=format&fit=crop', date: '2 weeks ago' }
-    ]
-};
+const GATEWAY = NEXT_PUBLIC_IPFS_GATEWAY || "https://gateway.lighthouse.storage/ipfs/";
+
+interface ContentItem {
+    id: string;
+    title: string;
+    thumbnail: string;
+    type: 'video' | 'audio' | 'article';
+    premium: boolean;
+    date: string;
+    price?: string;
+    isLegacy?: boolean;
+}
 
 export default function CreatorProfile(props: { params: Promise<{ address: string }> }) {
     const params = use(props.params);
-    const [selectedPlan, setSelectedPlan] = useState<any>(null);
-    const { authenticated } = usePrivy();
+    const { authenticated, user } = usePrivy();
+    const { wallets } = useWallets();
+    const { isSubscribed, isLoading: subLoading, refresh } = useSubscription(params.address);
 
-    // Mock checking subscription status
-    // const { data: subscription } = useSubscription(params.address) ...
-    const [userTier, setUserTier] = useState(0); // 0 = Free
+    const [creatorName, setCreatorName] = useState('');
+    const [subscriptionPrice, setSubscriptionPrice] = useState<bigint>(0n);
+    const [isRegistered, setIsRegistered] = useState(false);
+    const [isSubscribing, setIsSubscribing] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [creatorContent, setCreatorContent] = useState<ContentItem[]>([]);
 
-    const handleSubscriptionSuccess = (tierId: number) => {
-        console.log("Subscription successful! Upgrading to tier:", tierId);
-        setUserTier(tierId);
+    const isOwner = user?.wallet?.address?.toLowerCase() === params.address.toLowerCase();
+    const avatar = `https://api.dicebear.com/7.x/shapes/svg?seed=${params.address}`;
+
+    // Fetch Creator Details & Content from Chain
+    useEffect(() => {
+        const fetchData = async () => {
+            const client = createPublicClient({
+                chain: baseSepolia,
+                transport: http()
+            });
+
+            try {
+                // 1. Fetch Profile
+                const profileData = await client.readContract({
+                    address: CREATOR_HUB_ADDRESS as `0x${string}`,
+                    abi: CREATOR_HUB_ABI,
+                    functionName: 'cret',
+                    args: [params.address as `0x${string}`]
+                }) as [string, string, boolean, bigint, bigint, bigint];
+
+                const [name, wallet, registered, price] = profileData;
+                if (registered) {
+                    setCreatorName(name);
+                    setIsRegistered(true);
+                    setSubscriptionPrice(price);
+                } else {
+                    setCreatorName("Unknown Creator");
+                    setLoading(false);
+                    return; // Stop if not registered
+                }
+
+                // 2. Fetch Content (Client-side filtering for MVP)
+                // In production, an Indexer or specific Contract View is needed
+                const [rawVideos, rawContent] = await Promise.all([
+                    client.readContract({
+                        address: CREATOR_HUB_ADDRESS as `0x${string}`,
+                        abi: CREATOR_HUB_ABI,
+                        functionName: 'getLatestVideos',
+                        args: [50] // Check last 50 legacy videos
+                    }) as Promise<any[]>,
+                    client.readContract({
+                        address: CREATOR_HUB_ADDRESS as `0x${string}`,
+                        abi: CREATOR_HUB_ABI,
+                        functionName: 'getLatestContent',
+                        args: [50] // Check last 50 premium items
+                    }) as Promise<any[]>
+                ]);
+
+                const filteredItems: ContentItem[] = [];
+
+                // Process Legacy Videos
+                if (rawVideos) {
+                    const myVideos = rawVideos.filter((v: any) => v.uploader.toLowerCase() === params.address.toLowerCase());
+                    filteredItems.push(...myVideos.map((v: any) => ({
+                        id: v.videoCID,
+                        title: v.title,
+                        thumbnail: `${GATEWAY}${v.thumbnailCID}`,
+                        type: 'video' as const,
+                        premium: false,
+                        date: new Date(Number(v.timestamp) * 1000).toLocaleDateString(),
+                        isLegacy: true
+                    })));
+                }
+
+                // Process Premium Content
+                if (rawContent) {
+                    const myContent = rawContent.filter((c: any) => c.creatorAddress.toLowerCase() === params.address.toLowerCase() && c.active);
+
+                    // Fetch metadata for premium items
+                    const contentPromises = myContent.map(async (c: any) => {
+                        try {
+                            // Construct metadata URL safely (handles raw CID or ipfs:// prefix)
+                            const cid = c.metadataURI.replace('ipfs://', '');
+                            const metadataUrl = `${GATEWAY}${cid}`;
+
+                            const res = await fetch(metadataUrl);
+                            const meta = await res.json();
+                            return {
+                                id: c.id.toString(),
+                                title: meta.title || "Untitled",
+                                thumbnail: meta.thumbnail ? meta.thumbnail.replace('ipfs://', GATEWAY) : '',
+                                type: meta.contentType || 'video',
+                                premium: !c.isFree,
+                                date: new Date(meta.createdAt || Date.now()).toLocaleDateString(),
+                                price: c.fullPrice.toString()
+                            } as ContentItem;
+                        } catch (e) {
+                            console.error("Failed to load metadata", e);
+                            return null;
+                        }
+                    });
+
+                    const resolvedContent = (await Promise.all(contentPromises)).filter(Boolean) as ContentItem[];
+                    filteredItems.push(...resolvedContent);
+                }
+
+                setCreatorContent(filteredItems);
+            } catch (error) {
+                console.error("Error fetching data:", error);
+                setCreatorName("Error loading");
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        if (params.address) fetchData();
+    }, [params.address]);
+
+    const handleSubscribe = async () => {
+        if (!authenticated || !wallets.length) {
+            alert("Please connect your wallet first.");
+            return;
+        }
+
+        setIsSubscribing(true);
+        try {
+            const wallet = wallets[0];
+            await wallet.switchChain(baseSepolia.id);
+            const provider = await wallet.getEthereumProvider();
+            const walletClient = createWalletClient({
+                chain: baseSepolia,
+                transport: custom(provider)
+            });
+
+            const hash = await walletClient.writeContract({
+                address: CREATOR_HUB_ADDRESS as `0x${string}`,
+                abi: CREATOR_HUB_ABI,
+                functionName: 'subscribe',
+                args: [params.address as `0x${string}`],
+                value: subscriptionPrice,
+                account: wallet.address as `0x${string}`
+            });
+
+            console.log("Subscription tx:", hash);
+            alert("Transaction sent! Waiting for confirmation...");
+
+            setTimeout(() => {
+                refresh();
+                setIsSubscribing(false);
+            }, 5000);
+
+        } catch (error) {
+            console.error("Subscription failed:", error);
+            alert("Subscription failed. See console for details.");
+            setIsSubscribing(false);
+        }
     };
 
+    if (loading) {
+        return (
+            <div className="min-h-screen flex flex-col items-center justify-center space-y-4">
+                <Loader2 className="w-10 h-10 text-cyan-500 animate-spin" />
+                <p className="text-slate-400 animate-pulse">Fetching on-chain data...</p>
+            </div>
+        );
+    }
+
+    if (!isRegistered && creatorName !== 'Loading...') {
+        return (
+            <div className="min-h-screen flex items-center justify-center text-slate-500">
+                <div className="text-center space-y-4">
+                    <h1 className="text-2xl font-bold text-white">Creator Not Found</h1>
+                    <p>The address {params.address} is not registered as a creator.</p>
+                    <Link href="/creators" className="inline-block text-cyan-500 hover:text-cyan-400">
+                        &larr; Back to Creators
+                    </Link>
+                </div>
+            </div>
+        );
+    }
+
     return (
-        <div className="min-h-screen">
-            {/* Cover */}
-            <div className="h-64 md:h-80 w-full relative overflow-hidden rounded-b-3xl">
-                <img src={CREATOR_DATA.cover} alt="Cover" className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950 to-transparent" />
-            </div>
-
-            <div className="relative px-4 md:px-8 -mt-20">
-                {/* Profile Header */}
-                <div className="flex flex-col md:flex-row items-end md:items-center gap-6 mb-12">
-                    <div className="w-32 h-32 md:w-40 md:h-40 rounded-3xl border-4 border-slate-950 overflow-hidden shadow-2xl">
-                        <img src={CREATOR_DATA.avatar} alt="Avatar" className="w-full h-full object-cover" />
-                    </div>
-                    <div className="flex-1 space-y-2 mb-2">
-                        <h1 className="text-3xl md:text-4xl font-bold text-white flex items-center gap-2">
-                            {CREATOR_DATA.name}
-                            <Shield className="w-6 h-6 text-blue-500 fill-blue-500/20" />
-                        </h1>
-                        <p className="text-slate-400 max-w-lg">{CREATOR_DATA.bio}</p>
-                        <div className="flex gap-6 pt-2">
-                            {Object.entries(CREATOR_DATA.stats).map(([k, v]) => (
-                                <div key={k}>
-                                    <span className="block text-xl font-bold text-white leading-none">{v}</span>
-                                    <span className="text-xs text-slate-500 uppercase tracking-wider">{k}</span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex gap-3 w-full md:w-auto mt-4 md:mt-0">
-                        <button className="flex-1 md:flex-none px-6 py-3 rounded-full bg-slate-800 text-white font-medium hover:bg-slate-700 transition-colors">
-                            Follow
-                        </button>
-                        {/* Share Button etc. */}
-                    </div>
+        <div className="min-h-screen pb-20 bg-slate-950">
+            {/* Immersive Header */}
+            <div className="relative h-80 w-full overflow-hidden">
+                {/* Dynamic Blurred Background */}
+                <div className="absolute inset-0 bg-slate-900">
+                    <img src={avatar} alt="Blur Base" className="w-full h-full object-cover opacity-30 blur-3xl scale-110" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/50 to-transparent" />
                 </div>
 
-                {/* Plans Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-16 max-w-4xl mx-auto">
-                    {CREATOR_DATA.plans.map((plan) => (
-                        <div
-                            key={plan.id}
-                            className={`p-6 rounded-2xl border ${userTier >= plan.tierId
-                                ? 'bg-emerald-500/10 border-emerald-500/50'
-                                : 'bg-slate-900 border-white/5 hover:border-cyan-500/30'
-                                } transition-colors relative group`}
-                        >
-                            {userTier >= plan.tierId && (
-                                <div className="absolute top-4 right-4 px-2 py-1 bg-emerald-500/20 text-emerald-400 text-xs font-bold uppercase rounded">
-                                    Active
-                                </div>
-                            )}
-                            <h3 className="text-xl font-bold text-white mb-2">{plan.name}</h3>
-                            <div className="flex items-baseline gap-1 mb-4">
-                                <span className="text-3xl font-bold text-white">${plan.price}</span>
-                                <span className="text-slate-500">/{plan.period}</span>
-                            </div>
-                            <ul className="space-y-2 mb-6 text-sm text-slate-300">
-                                {plan.features.map(f => (
-                                    <li key={f} className="flex items-center gap-2">
-                                        <Star className="w-4 h-4 text-cyan-500" /> {f}
-                                    </li>
-                                ))}
-                            </ul>
+                <div className="relative h-full max-w-7xl mx-auto px-4 md:px-8 flex flex-col justify-end pb-8">
+                    <div className="flex flex-col md:flex-row items-end gap-8">
+                        {/* Avatar - Floating effect */}
+                        <div className="w-32 h-32 md:w-40 md:h-40 rounded-full border-4 border-slate-950 shadow-2xl overflow-hidden bg-slate-900 group">
+                            <img src={avatar} alt="Avatar" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                        </div>
 
-                            {userTier < plan.tierId && (
-                                <button
-                                    onClick={() => {
-                                        // Ensure valid address for demo
-                                        const addr = params.address.length === 42 ? params.address : '0x742d35Cc6634C0532925a3b844Bc454e4438f44e';
-                                        setSelectedPlan({ ...plan, creatorAddress: addr });
-                                    }}
-                                    className="w-full py-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold transition-all shadow-lg shadow-cyan-500/20"
+                        <div className="flex-1 mb-2">
+                            <div className="flex items-center gap-3 mb-1">
+                                <h1 className="text-4xl md:text-5xl font-black text-white tracking-tight">
+                                    {creatorName}
+                                </h1>
+                                <Shield className="w-8 h-8 text-cyan-400 fill-cyan-400/20" />
+                            </div>
+                            <div className="flex items-center gap-4 text-slate-400 text-sm font-medium">
+                                <span className="flex items-center gap-1 bg-slate-900/50 px-3 py-1 rounded-full border border-white/5">
+                                    <Wallet className="w-3 h-3" />
+                                    {params.address.slice(0, 6)}...{params.address.slice(-4)}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                    <span className="text-white font-bold">{creatorContent.length}</span> Uploads
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Action Card */}
+                        <div className="mb-2">
+                            {isOwner ? (
+                                <Link
+                                    href="/upload"
+                                    className="px-8 py-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold shadow-lg shadow-cyan-500/20 flex items-center gap-2 transition-all hover:scale-105 active:scale-95"
                                 >
-                                    Subscribe
-                                </button>
+                                    <Upload className="w-5 h-5" />
+                                    Upload New Content
+                                </Link>
+                            ) : (
+                                <div className="flex items-center gap-4">
+                                    {isSubscribed ? (
+                                        <div className="px-6 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold flex items-center gap-2">
+                                            <CheckCircle className="w-5 h-5" />
+                                            Subscribed
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={handleSubscribe}
+                                            disabled={isSubscribing || subLoading}
+                                            className="px-8 py-4 rounded-xl bg-white text-slate-950 font-bold hover:bg-slate-200 transition-all flex items-col gap-1 disabled:opacity-50"
+                                        >
+                                            <span>Subscribe</span>
+                                            <span className="text-xs font-normal opacity-60 ml-1">
+                                                for {formatEther(subscriptionPrice)} ETH
+                                            </span>
+                                        </button>
+                                    )}
+                                </div>
                             )}
                         </div>
-                    ))}
-                </div>
-
-                {/* Content Grid */}
-                <h2 className="text-2xl font-bold text-white mb-6">Recent Content</h2>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pb-20">
-                    {CREATOR_DATA.content.map((item) => {
-                        const locked = userTier < item.tier;
-                        return (
-                            <div key={item.id} className="group relative rounded-2xl overflow-hidden bg-slate-900 border border-white/5">
-                                <div className="aspect-video relative">
-                                    <img
-                                        src={item.thumbnail}
-                                        className={`w-full h-full object-cover transition-all duration-500 ${locked ? 'blur-sm grayscale opacity-50' : 'group-hover:scale-105'}`}
-                                        alt={item.title}
-                                    />
-                                    {locked && (
-                                        <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                                            <Lock className="w-8 h-8 text-white/70" />
-                                        </div>
-                                    )}
-                                    {!locked && (
-                                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
-                                            <Play className="w-10 h-10 text-white fill-white" />
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="p-4">
-                                    <div className="flex justify-between items-start mb-2">
-                                        <h4 className="font-bold text-white line-clamp-1">{item.title}</h4>
-                                        {item.tier > 0 && <span className="text-xs font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-300">{item.tier === 2 ? 'PREMIUM' : 'BASIC'}</span>}
-                                    </div>
-                                    <div className="flex justify-between items-center text-xs text-slate-500">
-                                        <span>{item.type}</span>
-                                        <span>{item.date}</span>
-                                    </div>
-                                    {locked ? (
-                                        <button
-                                            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} // Scroll to plans
-                                            className="mt-4 w-full py-2 rounded-lg bg-slate-800 text-slate-300 text-sm font-medium hover:bg-slate-700 transition-colors"
-                                        >
-                                            Unlock requires {item.tier === 2 ? 'Premium' : 'Basic'}
-                                        </button>
-                                    ) : (
-                                        <Link
-                                            href={`/content/${item.id}`}
-                                            className="mt-4 block w-full py-2 rounded-lg bg-white/10 text-center text-white text-sm font-medium hover:bg-white/20 transition-colors"
-                                        >
-                                            View Content
-                                        </Link>
-                                    )}
-                                </div>
-                            </div>
-                        );
-                    })}
+                    </div>
                 </div>
             </div>
 
-            {selectedPlan && (
-                <SubscriptionModal
-                    isOpen={!!selectedPlan}
-                    onClose={() => setSelectedPlan(null)}
-                    plan={selectedPlan}
-                    onSuccess={handleSubscriptionSuccess}
-                />
-            )}
+            <div className="max-w-7xl mx-auto px-4 md:px-8 mt-12">
+                <div className="flex items-center justify-between mb-8">
+                    <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                        <Play className="w-5 h-5 text-cyan-500" />
+                        Latest Content
+                    </h2>
+                </div>
+
+                {creatorContent.length === 0 ? (
+                    <div className="py-20 text-center border border-dashed border-slate-800 rounded-3xl bg-slate-900/30">
+                        <p className="text-slate-500">No content published yet.</p>
+                        {isOwner && (
+                            <Link href="/upload" className="text-cyan-500 hover:underline mt-2 inline-block">
+                                Upload your first video
+                            </Link>
+                        )}
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {creatorContent.map((item, i) => {
+                            const locked = item.premium && !isSubscribed && !isOwner;
+
+                            return (
+                                <motion.div
+                                    key={item.id}
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: i * 0.05 }}
+                                    className="group relative bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-cyan-500/30 transition-all hover:shadow-2xl hover:shadow-cyan-900/20"
+                                >
+                                    <div className="aspect-video relative overflow-hidden bg-slate-800">
+                                        <img
+                                            src={item.thumbnail}
+                                            alt={item.title}
+                                            className={`w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 ${locked ? 'blur-md opacity-50' : ''}`}
+                                            onError={(e) => { (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1626544827763-d516dce335ca?q=80&w=1000'; }}
+                                        />
+
+                                        <div className="absolute top-3 right-3 flex gap-2">
+                                            {item.premium && (
+                                                <span className="px-2 py-1 bg-amber-500 text-black text-xs font-bold uppercase tracking-wider rounded">
+                                                    Premium
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <div className="absolute bottom-3 right-3 px-2 py-1 bg-black/60 backdrop-blur rounded text-xs text-white font-mono">
+                                            {item.type.toUpperCase()}
+                                        </div>
+
+                                        {locked && (
+                                            <div className="absolute inset-0 flex flex-col items-center justify-center z-10">
+                                                <Lock className="w-10 h-10 text-slate-300 mb-2" />
+                                                <span className="text-slate-300 font-bold text-sm">Subscriber Only</span>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="p-5">
+                                        <h3 className="font-bold text-lg text-white mb-2 line-clamp-1 group-hover:text-cyan-400 transition-colors">
+                                            {item.title}
+                                        </h3>
+                                        <div className="flex items-center justify-between text-sm text-slate-500">
+                                            <span>{item.date}</span>
+                                            {item.premium && (
+                                                <span className="flex items-center gap-1 text-indigo-400">
+                                                    <Lock className="w-3 h-3" />
+                                                    {item.price ? (Number(item.price) / 1000000).toFixed(2) : ''} USDC
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <div className="mt-4">
+                                            {locked ? (
+                                                <button
+                                                    onClick={handleSubscribe}
+                                                    className="w-full py-2.5 rounded-lg bg-slate-800 text-slate-400 font-medium hover:bg-slate-700 transition-colors"
+                                                >
+                                                    Subscribe to View
+                                                </button>
+                                            ) : (
+                                                <Link
+                                                    href={`/content/${item.isLegacy ? 'legacy-' : ''}${item.id}`}
+                                                    className="block w-full py-2.5 rounded-lg bg-white/5 border border-white/5 text-center text-white font-medium hover:bg-white/10 transition-colors"
+                                                >
+                                                    View Content
+                                                </Link>
+                                            )}
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
         </div>
     );
 }

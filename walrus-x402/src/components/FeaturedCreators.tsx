@@ -1,18 +1,76 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
+import { createPublicClient, http } from 'viem';
+import { baseSepolia } from 'viem/chains';
+import { CREATOR_HUB_ADDRESS, CREATOR_HUB_ABI, WALLET_ADDRESS_LENGTH } from '@/config/constants';
 
-const creators = [
-    { name: 'Crypto Studios', avatar: 'https://images.unsplash.com/photo-1614680376593-902f74cf0d41?auto=format&fit=crop&w=100&q=80' },
-    { name: 'DeFi Daily', avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80' },
-    { name: 'Alpha Leaks', avatar: 'https://images.unsplash.com/photo-1627161683077-e34782c24d81?auto=format&fit=crop&w=100&q=80' },
-    { name: 'Chain Gaming', avatar: 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?auto=format&fit=crop&w=100&q=80' },
-    { name: 'L2 Beat', avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=100&q=80' },
-    { name: 'Solana Sensei', avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=100&q=80' },
-];
+interface Creator {
+    name: string;
+    address: string;
+    avatar: string;
+}
 
 export default function FeaturedCreators() {
+    const [creators, setCreators] = useState<Creator[]>([]);
+
+    useEffect(() => {
+        const fetchCreators = async () => {
+            try {
+                const client = createPublicClient({
+                    chain: baseSepolia,
+                    transport: http()
+                });
+
+                // Fetch latest videos to find active creators
+                // @ts-ignore
+                const rawVideos: any[] = await client.readContract({
+                    address: CREATOR_HUB_ADDRESS as `0x${string}`,
+                    abi: CREATOR_HUB_ABI,
+                    functionName: 'getLatestVideos',
+                    args: [50] // Look at last 50 videos
+                });
+
+                if (!rawVideos || rawVideos.length === 0) return;
+
+                // Extract unique uploaders
+                const uniqueUploaders = Array.from(new Set(rawVideos.map((v: any) => v.uploader)));
+
+                // Fetch names for each uploader
+                const creatorsData = await Promise.all(uniqueUploaders.map(async (address: unknown) => {
+                    const walletAddress = address as `0x${string}`;
+                    // @ts-ignore
+                    const name = await client.readContract({
+                        address: CREATOR_HUB_ADDRESS as `0x${string}`,
+                        abi: CREATOR_HUB_ABI,
+                        functionName: 'getChannelName',
+                        args: [walletAddress]
+                    });
+
+                    return {
+                        name: name as string,
+                        address: walletAddress,
+                        // Consistent avatar generation based on address
+                        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${walletAddress}`
+                    };
+                }));
+
+                setCreators(creatorsData);
+            } catch (error) {
+                console.error("Error fetching creators:", error);
+            }
+        };
+
+        fetchCreators();
+    }, []);
+
+    if (creators.length === 0) return null;
+
+    // Duplicate list for infinite scroll effect
+    const displayCreators = [...creators, ...creators, ...creators];
+
     return (
         <section className="space-y-8 overflow-hidden">
             <div className="text-center">
@@ -32,10 +90,10 @@ export default function FeaturedCreators() {
                         ease: "linear"
                     }}
                 >
-                    {[...creators, ...creators, ...creators].map((creator, i) => (
+                    {displayCreators.map((creator, i) => (
                         <Link
-                            key={i}
-                            href={`/creators/${i}`}
+                            key={`${creator.address}-${i}`}
+                            href={`/creators/${creator.address}`}
                             className="flex items-center gap-3 p-2 pr-6 rounded-full bg-slate-900/50 border border-white/5 hover:border-cyan-500/30 transition-colors group"
                         >
                             <img
