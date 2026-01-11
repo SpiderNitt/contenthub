@@ -19,6 +19,7 @@ interface ContentData {
     type: 'video' | 'audio' | 'article';
     isPremium: boolean;
     price: string; // in wei
+    rentPrice: string; // in wei
     videoCID: string;
     thumbnailCID: string;
     timestamp: number;
@@ -38,6 +39,9 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
     const [content, setContent] = useState<ContentData | null>(null);
     const [error, setError] = useState('');
     const [relatedContent, setRelatedContent] = useState<ContentData[]>([]);
+
+    // Purchase Options State
+    const [purchaseType, setPurchaseType] = useState<'rent' | 'buy'>('rent');
 
     useEffect(() => {
         async function fetchContent() {
@@ -85,6 +89,7 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
                             type: 'video',
                             isPremium: false,
                             price: '0',
+                            rentPrice: '0',
                             videoCID: match.videoCID,
                             thumbnailCID: match.thumbnailCID,
                             timestamp: Number(match.timestamp),
@@ -166,6 +171,7 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
                             type: metadata.contentType || 'video',
                             isPremium: !isFree,
                             price: fullPrice.toString(),
+                            rentPrice: rentedPrice.toString(),
                             videoCID: metadata.video ? metadata.video.replace('ipfs://', '') : '',
                             thumbnailCID: metadata.thumbnail ? metadata.thumbnail.replace('ipfs://', '') : '',
                             timestamp: metadata.createdAt ? Math.floor(metadata.createdAt / 1000) : Math.floor(Date.now() / 1000),
@@ -181,6 +187,10 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
                     setError("Content not found.");
                 } else {
                     setContent(fetchedContent);
+                    // Default to Buy if Rent is not available
+                    if (Number(fetchedContent.rentPrice) === 0) {
+                        setPurchaseType('buy');
+                    }
                     // Fetch related content
                     fetchRelatedContent(client, fetchedContent.creatorAddress, fetchedContent.id);
                 }
@@ -225,6 +235,7 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
                         type: 'video' as const,
                         isPremium: false,
                         price: '0',
+                        rentPrice: '0',
                         videoCID: v.videoCID,
                         thumbnailCID: v.thumbnailCID,
                         timestamp: Number(v.timestamp),
@@ -258,6 +269,7 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
                                 type: meta.contentType || 'video',
                                 isPremium: !c.isFree,
                                 price: c.fullPrice.toString(),
+                                rentPrice: c.rentedPrice.toString(),
                                 videoCID: meta.video ? meta.video.replace('ipfs://', '') : '',
                                 thumbnailCID: meta.thumbnail ? meta.thumbnail.replace('ipfs://', '') : '',
                                 timestamp: meta.createdAt ? Math.floor(meta.createdAt / 1000) : Math.floor(Date.now() / 1000),
@@ -345,10 +357,11 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
     const handleBuy = async () => {
         if (!content) return;
         try {
+            const amount = purchaseType === 'rent' ? content.rentPrice : content.price;
             await handlePayment({
                 chainId: CHAIN_ID,
                 tokenAddress: content.paymentToken,
-                amount: content.price,
+                amount: amount,
                 recipient: content.creatorAddress
             });
         } catch (e) {
@@ -375,6 +388,9 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
             </div>
         );
     }
+
+    const activePrice = purchaseType === 'rent' ? content.rentPrice : content.price;
+    const canRent = Number(content.rentPrice) > 0;
 
     return (
         <div className="min-h-screen bg-slate-950 pb-20 relative overflow-hidden">
@@ -409,68 +425,103 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
                                         className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-900/60 p-6 text-center"
                                     >
                                         {!authenticated ? (
-                                            <div className="space-y-6 max-w-sm">
-                                                <div className="w-20 h-20 rounded-full bg-slate-800/80 flex items-center justify-center mx-auto border border-white/10">
-                                                    <Lock className="w-8 h-8 text-slate-400" />
+                                            <div className="max-w-[260px] w-full relative group">
+                                                <div className="absolute -inset-0.5 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-2xl blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
+                                                <div className="relative bg-slate-950/90 backdrop-blur-2xl border border-white/10 p-5 rounded-2xl shadow-2xl text-center space-y-4">
+                                                    <div className="w-12 h-12 rounded-xl bg-slate-900 flex items-center justify-center mx-auto border border-white/5 shadow-inner transform rotate-3 group-hover:rotate-6 transition-transform">
+                                                        <Lock className="w-5 h-5 text-slate-400" />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <h2 className="text-lg font-bold text-white">Login Required</h2>
+                                                        <p className="text-slate-400 text-xs leading-relaxed">Connect wallet to unlock.</p>
+                                                    </div>
+                                                    <button onClick={login} className="w-full py-2.5 bg-white text-slate-950 rounded-lg font-bold hover:bg-cyan-50 transition-all shadow-lg shadow-white/10 text-xs uppercase tracking-wide">
+                                                        Connect Wallet
+                                                    </button>
                                                 </div>
-                                                <div className="space-y-2">
-                                                    <h2 className="text-2xl font-bold text-white">Login Required</h2>
-                                                    <p className="text-slate-400">Connect your wallet to access this content.</p>
-                                                </div>
-                                                <button onClick={login} className="w-full py-3 bg-cyan-500 rounded-xl text-slate-950 font-bold hover:bg-cyan-400 transition-all shadow-lg hover:shadow-cyan-500/20">
-                                                    Connect Wallet
-                                                </button>
                                             </div>
                                         ) : (
-                                            <div className="space-y-8 max-w-md w-full">
-                                                <div className="w-24 h-24 rounded-full bg-indigo-500/10 flex items-center justify-center mx-auto border border-indigo-500/20 shadow-[0_0_30px_-5px_rgba(99,102,241,0.3)] animate-pulse">
-                                                    <ShieldCheck className="w-10 h-10 text-indigo-400" />
-                                                </div>
+                                            <div className="max-w-[300px] w-full relative group">
+                                                {/* Gradient Border Glow */}
+                                                <div className="absolute -inset-[1px] bg-gradient-to-b from-indigo-500/50 to-transparent rounded-[26px] blur-sm opacity-50"></div>
 
-                                                <div className="space-y-2">
-                                                    <h2 className="text-3xl font-bold text-white tracking-tight">Premium Content</h2>
-                                                    <p className="text-slate-300 text-lg">Purchase standard access to decrypt and view.</p>
-                                                </div>
+                                                <div className="relative bg-slate-950/90 backdrop-blur-3xl border border-white/10 p-1 rounded-3xl shadow-2xl overflow-hidden">
+                                                    {/* Background Pattern */}
+                                                    <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20"></div>
 
-                                                <div className="bg-slate-900/80 backdrop-blur-xl p-6 rounded-2xl border border-white/10 shadow-xl space-y-4">
-                                                    <div className="flex justify-between items-end border-b border-white/5 pb-4">
-                                                        <span className="text-slate-400 font-medium">One-time Purchase</span>
-                                                        <div className="text-right">
-                                                            <span className="block text-3xl font-black text-white">
-                                                                {(Number(content.price) / 1000000).toFixed(2)} <span className="text-lg text-slate-500 font-bold">USDC</span>
-                                                            </span>
+                                                    <div className="relative p-5 text-center space-y-2">
+                                                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500/20 to-purple-500/20 flex items-center justify-center mx-auto border border-indigo-500/30 shadow-[0_0_20px_-5px_rgba(99,102,241,0.3)]">
+                                                            <ShieldCheck className="w-5 h-5 text-indigo-400" />
+                                                        </div>
+                                                        <div>
+                                                            <h2 className="text-lg font-bold text-white tracking-tight">Unlock Content</h2>
+                                                            <p className="text-slate-400 text-[10px] mt-0.5">Choose a plan to decrypt and watch.</p>
                                                         </div>
                                                     </div>
 
-                                                    <button
-                                                        onClick={handleBuy}
-                                                        disabled={paymentLoading || paymentState === 'success' || paymentState === 'verifying'}
-                                                        className="w-full py-4 bg-indigo-500 hover:bg-indigo-400 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-bold text-lg rounded-xl transition-all shadow-lg shadow-indigo-500/20 flex justify-center items-center gap-2 group/btn relative overflow-hidden"
-                                                    >
-                                                        {paymentLoading || paymentState === 'paying' || paymentState === 'confirming' || paymentState === 'verifying' ? (
-                                                            <>
-                                                                <Loader2 className="w-6 h-6 animate-spin" />
-                                                                <span className="capitalize">{paymentState}...</span>
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <span>Unlock Now</span>
-                                                                <ShieldCheck className="w-5 h-5 group-hover/btn:scale-110 transition-transform" />
-                                                            </>
+                                                    <div className="relative bg-white/[0.03] rounded-2xl p-4 space-y-4 mt-0 border-t border-white/5 mx-1 mb-1 backdrop-blur-sm">
+                                                        {/* Custom Tab Switcher */}
+                                                        {canRent && (
+                                                            <div className="flex p-1 bg-slate-950/80 rounded-xl border border-white/5 relative">
+                                                                <button
+                                                                    onClick={() => setPurchaseType('rent')}
+                                                                    className={`flex-1 relative z-10 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-300 ${purchaseType === 'rent' ? 'text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                                                                >
+                                                                    Rent
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setPurchaseType('buy')}
+                                                                    className={`flex-1 relative z-10 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-300 ${purchaseType === 'buy' ? 'text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                                                                >
+                                                                    Buy
+                                                                </button>
+
+                                                                {/* Sliding Background */}
+                                                                <div
+                                                                    className={`absolute top-1 bottom-1 w-[calc(50%-4px)] bg-indigo-600 rounded-lg shadow-lg border border-white/10 transition-all duration-300 ease-spring ${purchaseType === 'rent' ? 'left-1' : 'left-[calc(50%+2px)]'}`}
+                                                                />
+                                                            </div>
                                                         )}
-                                                    </button>
 
-                                                    {paymentError && (
-                                                        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="text-red-400 text-sm bg-red-500/10 p-3 rounded-lg flex items-center gap-2">
-                                                            <AlertCircle className="w-4 h-4 shrink-0" />
-                                                            {paymentError.message}
-                                                        </motion.div>
-                                                    )}
+                                                        {/* Price Display */}
+                                                        <div className="flex flex-col items-center py-1 space-y-0.5">
+                                                            <div className="flex items-end gap-1">
+                                                                <span className="text-3xl font-black text-white tracking-tighter drop-shadow-lg">
+                                                                    {(Number(activePrice) / 1000000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })}
+                                                                </span>
+                                                                <span className="text-xs font-bold text-slate-500 mb-1">USDC</span>
+                                                            </div>
+                                                            <span className={`text-[9px] font-bold uppercase tracking-widest py-0.5 px-2 rounded-full border ${purchaseType === 'rent' ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-300' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'}`}>
+                                                                {purchaseType === 'rent' ? '30 Day Access' : 'Lifetime Access'}
+                                                            </span>
+                                                        </div>
+
+                                                        <button
+                                                            onClick={handleBuy}
+                                                            disabled={paymentLoading || paymentState === 'success' || paymentState === 'verifying'}
+                                                            className="w-full py-3 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all shadow-[0_0_30px_-5px_rgba(99,102,241,0.4)] hover:shadow-[0_0_40px_-5px_rgba(99,102,241,0.5)] flex justify-center items-center gap-2 group/btn border border-white/10"
+                                                        >
+                                                            {paymentLoading || paymentState === 'paying' || paymentState === 'confirming' || paymentState === 'verifying' ? (
+                                                                <>
+                                                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                                                    <span className="text-sm">Processing...</span>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <span className="text-sm uppercase tracking-wider">{purchaseType === 'rent' ? 'Rent Now' : 'Buy Now'}</span>
+                                                                    <ShieldCheck className="w-5 h-5 group-hover/btn:scale-110 transition-transform" />
+                                                                </>
+                                                            )}
+                                                        </button>
+
+                                                        {paymentError && (
+                                                            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="text-red-400 text-xs bg-red-500/10 p-3 rounded-lg flex items-start gap-2 text-left border border-red-500/20">
+                                                                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                                                                <span>{paymentError.message}</span>
+                                                            </motion.div>
+                                                        )}
+                                                    </div>
                                                 </div>
-
-                                                <p className="text-xs text-slate-500">
-                                                    Secure payment powered by Base Sepolia.
-                                                </p>
                                             </div>
                                         )}
                                     </motion.div>
@@ -602,6 +653,6 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
                     </div>
                 </div>
             </div>
-        </div>
+        </div >
     );
 }
