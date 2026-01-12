@@ -1,36 +1,77 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Walrus x402 Content Hub
 
-## Getting Started
+A decentralized content marketplace where creators can upload, monetize, and share videos, articles, and audio content. Built on the Base Sepolia testnet, Walrus x402 leverages blockchain technology for secure payments and decentralized storage (Lighthouse/IPFS).
 
-First, run the development server:
+## 🚀 Key Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+*   **Decentralized Storage:** All content (videos, thumbnails, etc.) is stored on IPFS via Lighthouse, ensuring censorship resistance and permanence.
+*   **Flexible Monetization:** Creators can set "Rent" (time-limited) or "Buy" (lifetime access) prices for their content.
+*   **Crypto Payments:** Native integration with USDC on Base Sepolia for seamless and low-cost transactions.
+*   **Wallet Authentication:** Secure login using Privy with support for various wallets (MetaMask, Coinbase Wallet, etc.).
+*   **Creator Profiles:** Dedicated pages for creators to showcase their portfolio and build an audience.
+*   **Paywall Protection:** Content is securely gated; access is only granted after verifying on-chain payments.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 🛠️ Technical Stack
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+*   **Frontend:** Next.js 15 (React 19), Tailwind CSS v4, Framer Motion
+*   **Authentication:** Privy (`@privy-io/react-auth`)
+*   **Blockchain:** Viem, Wagmi
+*   **Storage:** Lighthouse SDK (IPFS)
+*   **Network:** Base Sepolia Testnet
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 🏁 Getting Started
 
-## Learn More
+### Prerequisites
 
-To learn more about Next.js, take a look at the following resources:
+*   Node.js v18+
+*   npm or yarn
+*   A Base Sepolia Testnet Wallet (with ETH for gas)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Installation
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/your-username/walrus-x402.git
+    cd walrus-x402
+    ```
 
-## Deploy on Vercel
+2.  **Install dependencies:**
+    ```bash
+    npm install
+    ```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+3.  **Environment Variables:**
+    Create a `.env` file in the root directory and add the following keys:
+    ```env
+    NEXT_PUBLIC_PRIVY_APP_ID=your_privy_app_id
+    NEXT_PUBLIC_LIGHTHOUSE_API_KEY=your_lighthouse_api_key
+    ```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+4.  **Run the development server:**
+    ```bash
+    npm run dev
+    ```
+
+5.  Open [http://localhost:3000](http://localhost:3000) with your browser.
+
+## ⛓️ Smart Contracts
+
+The application interacts with contracts on **Base Sepolia (Chain ID: 84532)**.
+
+*   **CreatorHub Protocol:** `0x56759064e48366772a0254b504c740f4726ade47`
+*   **USDC (Testnet):** `0x036CbD53842c5426634e7929541eC2318f3dCF7e`
+
+## 💸 USCD Faucet & Setup
+
+Since this runs on Base Sepolia, you will need testnet USDC.
+1.  **Get ETH:** [Base Sepolia Faucet](https://www.alchemy.com/faucets/base-sepolia)
+2.  **Get USDC:** [Circle Faucet](https://faucet.circle.com/)
+3.  **Add Token:** If "USDC" shows as "Unknown" in your wallet, look for the **"Don't see USDC? Add to Wallet"** button on the payment overlay to automatically import it.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please fork the repo and create a pull request with your improvements.
+
+## 📄 License
+
+This project is licensed under the MIT License.
