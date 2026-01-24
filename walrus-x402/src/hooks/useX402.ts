@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { encodeFunctionData, erc20Abi, createPublicClient, http } from 'viem';
 import { baseSepolia } from 'viem/chains';
+import { CREATOR_HUB_ADDRESS, CREATOR_HUB_ABI } from '@/config/constants';
 
 // Payment metadata interface for type safety
 interface PaymentMetadata {
@@ -11,6 +12,7 @@ interface PaymentMetadata {
     recipient: string;
     paymentParameter?: {
         minerOf?: string;
+        contentId?: string; // For rentals
     };
 }
 
@@ -143,7 +145,50 @@ export function useX402() {
             const provider = await wallet.getEthereumProvider();
             let txHash: string;
 
-            if (metadata.tokenAddress && metadata.tokenAddress !== '0x0000000000000000000000000000000000000000') {
+            if (metadata.recipient === CREATOR_HUB_ADDRESS) {
+                // Smart contract interaction
+                console.log("[x402] Smart Contract Interaction:", metadata);
+
+                if (metadata.paymentParameter?.contentId) {
+                    // Rental: rentContent(uint256 _contentId)
+                    const data = encodeFunctionData({
+                        abi: CREATOR_HUB_ABI,
+                        functionName: 'rentContent',
+                        args: [BigInt(metadata.paymentParameter.contentId)]
+                    });
+
+                    txHash = await provider.request({
+                        method: 'eth_sendTransaction',
+                        params: [{
+                            to: CREATOR_HUB_ADDRESS,
+                            from: wallet.address,
+                            data: data,
+                            value: '0x' + BigInt(metadata.amount).toString(16)
+                        }]
+                    }) as string;
+
+                } else if (metadata.paymentParameter?.minerOf) {
+                    // Subscription: subscribe(address _creator)
+                    const data = encodeFunctionData({
+                        abi: CREATOR_HUB_ABI,
+                        functionName: 'subscribe',
+                        args: [metadata.paymentParameter.minerOf as `0x${string}`]
+                    });
+
+                    txHash = await provider.request({
+                        method: 'eth_sendTransaction',
+                        params: [{
+                            to: CREATOR_HUB_ADDRESS,
+                            from: wallet.address,
+                            data: data,
+                            value: '0x' + BigInt(metadata.amount).toString(16)
+                        }]
+                    }) as string;
+                } else {
+                    throw new Error("Invalid payment parameters for smart contract");
+                }
+
+            } else if (metadata.tokenAddress && metadata.tokenAddress !== '0x0000000000000000000000000000000000000000') {
                 // ERC20 Transfer
                 const data = encodeFunctionData({
                     abi: erc20Abi,
@@ -167,7 +212,7 @@ export function useX402() {
                     throw new Error(`ERC20 Transfer failed: ${err.message}`);
                 }
             } else {
-                // Native ETH Transfer
+                // Native ETH Transfer (Fallback or direct tip)
                 try {
                     txHash = await provider.request({
                         method: 'eth_sendTransaction',

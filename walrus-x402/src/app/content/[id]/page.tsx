@@ -333,14 +333,22 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
                     transport: http()
                 });
 
-                const isSubscribed = await client.readContract({
-                    address: CREATOR_HUB_ADDRESS as `0x${string}`,
-                    abi: CREATOR_HUB_ABI,
-                    functionName: 'checkSubscription',
-                    args: [user?.wallet?.address as `0x${string}`, content!.creatorAddress as `0x${string}`]
-                }) as boolean;
+                const [isSubscribed, isRented] = await Promise.all([
+                    client.readContract({
+                        address: CREATOR_HUB_ADDRESS as `0x${string}`,
+                        abi: CREATOR_HUB_ABI,
+                        functionName: 'checkSubscription',
+                        args: [user?.wallet?.address as `0x${string}`, content!.creatorAddress as `0x${string}`]
+                    }) as Promise<boolean>,
+                    client.readContract({
+                        address: CREATOR_HUB_ADDRESS as `0x${string}`,
+                        abi: CREATOR_HUB_ABI,
+                        functionName: 'checkRental',
+                        args: [user?.wallet?.address as `0x${string}`, BigInt(content!.id)]
+                    }) as Promise<boolean>
+                ]);
 
-                if (isSubscribed) {
+                if (isSubscribed || isRented) {
                     setAuthorized(true);
                     return;
                 }
@@ -380,11 +388,28 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
         if (!content) return;
         try {
             const amount = purchaseType === 'rent' ? content.rentPrice : content.price;
+
+            // Determine recipient and parameters based on purchase type
+            let recipient = content.creatorAddress;
+            let paymentParams = {};
+
+            if (purchaseType === 'rent') {
+                // Rentals MUST go to the Smart Contract
+                recipient = CREATOR_HUB_ADDRESS;
+                paymentParams = {
+                    contentId: content.id
+                };
+            }
+            // 'buy' (Lifetime/Full Price) currently falls back to direct transfer 
+            // as CreatorHub doesn't have a 'buyContent' function yet. 
+            // TODO: Implement 'buyContent' in contract for verifiable ownership.
+
             await handlePayment({
                 chainId: CHAIN_ID,
                 tokenAddress: content.paymentToken,
                 amount: amount,
-                recipient: content.creatorAddress
+                recipient: recipient,
+                paymentParameter: paymentParams
             });
         } catch (e) {
             console.error(e);
@@ -421,7 +446,7 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
                 <div className="absolute inset-0 bg-slate-950/80 z-10" />
                 <img
                     src={`${GATEWAY}${content.thumbnailCID}`}
-                    className="w-full h-[80vh] object-cover blur-3xl opacity-40"
+                    className="w-full h-full object-cover blur-3xl opacity-40"
                     alt="Background"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent z-20" />
@@ -514,7 +539,7 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
                                                                 <span className="text-xs font-bold text-slate-500 mb-1">USDC</span>
                                                             </div>
                                                             <span className={`text-[9px] font-bold uppercase tracking-widest py-0.5 px-2 rounded-full border ${purchaseType === 'rent' ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-300' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'}`}>
-                                                                {purchaseType === 'rent' ? '30 Day Access' : 'Lifetime Access'}
+                                                                {purchaseType === 'rent' ? '24 Hour Access' : 'Lifetime Access (Direct)'}
                                                             </span>
                                                         </div>
 

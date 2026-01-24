@@ -28,6 +28,8 @@ contract CreatorHub {
     mapping(address => Creator) public cret;
     // Mapping from Subscriber -> Creator -> Expiry Timestamp
     mapping(address => mapping(address => uint256)) public subscriptions;
+    // Mapping from User -> ContentId -> Expiry Timestamp (Rentals)
+    mapping(address => mapping(uint256 => uint256)) public rentals;
     
     // Array of all videos for showcase
     Video[] public allVideos;
@@ -61,6 +63,7 @@ contract CreatorHub {
     event VideoUploaded(uint256 indexed videoId, address indexed uploader, string title);
     event ContentCreated(uint256 indexed contentId, address indexed creator, string metadataURI);
     event Subscribed(address indexed subscriber, address indexed creator, uint256 expiry);
+    event ContentRented(address indexed renter, uint256 indexed contentId, uint256 expiry);
     event SubscriptionPriceUpdated(address indexed creator, uint256 newPrice);
 
     address[] public allCreators;
@@ -113,6 +116,31 @@ contract CreatorHub {
         cret[_creator].totalEarnings += msg.value;
 
         emit Subscribed(msg.sender, _creator, newExpiry);
+    }
+
+    function rentContent(uint256 _contentId) external payable {
+        Content memory c = contents[_contentId];
+        require(c.active, "Content not active");
+        require(c.rentedPrice > 0, "Content not for rent");
+        
+        // Check native ETH payment (ignoring ERC20 paymentToken for now to match current simple flow)
+        require(msg.value >= c.rentedPrice, "Insufficient payment");
+
+        uint256 newExpiry = block.timestamp + 24 hours;
+        rentals[msg.sender][_contentId] = newExpiry;
+
+        // Transfer funds to creator
+        (bool sent, ) = payable(c.creatorAddress).call{value: msg.value}("");
+        require(sent, "Failed to send Ether");
+
+        // Update Stats (Optional: add content specific earnings later)
+        cret[c.creatorAddress].totalEarnings += msg.value;
+
+        emit ContentRented(msg.sender, _contentId, newExpiry);
+    }
+
+    function checkRental(address _user, uint256 _contentId) external view returns (bool) {
+        return rentals[_user][_contentId] > block.timestamp;
     }
 
     function checkSubscription(address _subscriber, address _creator) external view returns (bool) {

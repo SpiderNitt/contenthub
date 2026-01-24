@@ -1,77 +1,94 @@
-# Walrus x402 Content Hub
+# 🎥 Content Hub x402
 
-A decentralized content marketplace where creators can upload, monetize, and share videos, articles, and audio content. Built on the Base Sepolia testnet, Walrus x402 leverages blockchain technology for secure payments and decentralized storage (Lighthouse/IPFS).
+**A decentralized, premium content marketplace on Base Sepolia.**
 
-## 🚀 Key Features
+Creators can monetize their high-quality video content directly through smart contracts, offering both **Rentals (24h access)** and **Lifetime Access**. Content is securely stored on IPFS (via Lighthouse) and payments are handled in USDC/ETH.
 
-*   **Decentralized Storage:** All content (videos, thumbnails, etc.) is stored on IPFS via Lighthouse, ensuring censorship resistance and permanence.
-*   **Flexible Monetization:** Creators can set "Rent" (time-limited) or "Buy" (lifetime access) prices for their content.
-*   **Crypto Payments:** Native integration with USDC on Base Sepolia for seamless and low-cost transactions.
-*   **Wallet Authentication:** Secure login using Privy with support for various wallets (MetaMask, Coinbase Wallet, etc.).
-*   **Creator Profiles:** Dedicated pages for creators to showcase their portfolio and build an audience.
-*   **Paywall Protection:** Content is securely gated; access is only granted after verifying on-chain payments.
+![App Screenshot](public/icon.png)
 
-## 🛠️ Technical Stack
+## ✨ Key Features
 
-*   **Frontend:** Next.js 15 (React 19), Tailwind CSS v4, Framer Motion
-*   **Authentication:** Privy (`@privy-io/react-auth`)
-*   **Blockchain:** Viem, Wagmi
-*   **Storage:** Lighthouse SDK (IPFS)
-*   **Network:** Base Sepolia Testnet
+### 🔐 For Consumers
+- **Crypto Payments**: Pay seamlessly with **ETH** or **USDC** on Base Sepolia.
+- **Flexible Access**:
+    - **Rent**: Get 24-hour access for a fraction of the price.
+    - **Buy**: Purchase lifetime access to support your favorite creators.
+- **My Library**: A unified dashboard to view your active rentals and purchased content.
+- **Privacy First**: Login securely with just your wallet via **Privy**.
 
-## 🏁 Getting Started
+### 🎨 For Creators
+- **Direct Monetization**: Receive 100% of revenue directly to your wallet.
+- **On-Chain Ownership**: Your catalog is registered on the blockchain.
+- **Decentralized Storage**: Videos are stored on **Walrus / IPFS**, ensuring censorship resistance.
+- **Easy Uploads**: Drag-and-drop studio interface for publishing.
+
+## 🛠️ Tech Stack
+
+- **Framework**: Next.js 15 (App Router)
+- **Styling**: Tailwind CSS v4 + Framer Motion
+- **Blockchain**: Foundry (Smart Contracts) + Viem (Frontend)
+- **Authentication**: Privy
+- **Storage**: Lighthouse (IPFS)
+- **Network**: Base Sepolia Testnet
+
+## 🚀 Getting Started
 
 ### Prerequisites
-
-*   Node.js v18+
-*   npm or yarn
-*   A Base Sepolia Testnet Wallet (with ETH for gas)
+- Node.js 18+
+- A Web3 Wallet (Metamask, Coinbase Wallet, etc.)
+- Testnet ETH on Base Sepolia (Get it [here](https://briefcase.coinbase.com/bridge))
 
 ### Installation
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/your-username/walrus-x402.git
-    cd walrus-x402
-    ```
+1. **Clone the repo**
+   ```bash
+   git clone https://github.com/yourusername/content-hub-x402.git
+   cd content-hub-x402
+   ```
 
-2.  **Install dependencies:**
-    ```bash
-    npm install
-    ```
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
 
-3.  **Environment Variables:**
-    Create a `.env` file in the root directory and add the following keys:
-    ```env
-    NEXT_PUBLIC_PRIVY_APP_ID=your_privy_app_id
-    NEXT_PUBLIC_LIGHTHOUSE_API_KEY=your_lighthouse_api_key
-    ```
+3. **Set up Environment Variables**
+   Create a `.env` file based on `.env.example`:
+   ```env
+   NEXT_PUBLIC_PRIVY_APP_ID=your_privy_id
+   NEXT_PUBLIC_LIGHTHOUSE_API_KEY=your_lighthouse_key
+   # ... other keys
+   ```
 
-4.  **Run the development server:**
-    ```bash
-    npm run dev
-    ```
-
-5.  Open [http://localhost:3000](http://localhost:3000) with your browser.
+4. **Run the development server**
+   ```bash
+   npm run dev
+   ```
+   Open [http://localhost:3000](http://localhost:3000) to see the app.
 
 ## ⛓️ Smart Contracts
 
-The application interacts with contracts on **Base Sepolia (Chain ID: 84532)**.
+Deployed on **Base Sepolia**.
 
-*   **CreatorHub Protocol:** `0x56759064e48366772a0254b504c740f4726ade47`
-*   **USDC (Testnet):** `0x036CbD53842c5426634e7929541eC2318f3dCF7e`
+| Contract | Address |
+|----------|---------|
+| **CreatorHub** | `0xc567c6112720d8190caa4e93086cd36e2ae01d37` |
+| **USDC (Testnet)** | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
 
-## 💸 USCD Faucet & Setup
-
-Since this runs on Base Sepolia, you will need testnet USDC.
-1.  **Get ETH:** [Base Sepolia Faucet](https://www.alchemy.com/faucets/base-sepolia)
-2.  **Get USDC:** [Circle Faucet](https://faucet.circle.com/)
-3.  **Add Token:** If "USDC" shows as "Unknown" in your wallet, look for the **"Don't see USDC? Add to Wallet"** button on the payment overlay to automatically import it.
+### Key Functions
+- `rentContent(uint256 contentId)`: Pay ETH to get 24h access.
+- `subscribe(address creator)`: Monthly subscription to a creator.
+- `checkRental(address user, uint256 contentId)`: Verifies access status.
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please fork the repo and create a pull request with your improvements.
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the Branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
 ## 📄 License
 
-This project is licensed under the MIT License.
+Distributed under the MIT License. See `LICENSE` for more information.
