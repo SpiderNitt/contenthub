@@ -1,0 +1,46 @@
+# ===================
+# ContentHub Monorepo
+# ===================
+
+# === Frontend (Next.js) ===
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.pnp
+frontend/.pnp.*
+frontend/.yarn/*
+!frontend/.yarn/patches
+!frontend/.yarn/plugins
+!frontend/.yarn/releases
+!frontend/.yarn/versions
+frontend/coverage/
+frontend/*.tsbuildinfo
+frontend/next-env.d.ts
+frontend/.vercel
+
+# === Contracts (Foundry) ===
+contracts/out/
+contracts/cache/
+contracts/broadcast/*/
+
+# === Environment ===
+.env
+.env.*
+!.env.example
+
+# === IDE & OS ===
+.DS_Store
+*.log
+*.bak
+*.pem
+.idea/
+.vscode/
+*.swp
+*~
+
+# === Debug ===
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
