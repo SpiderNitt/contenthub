@@ -421,9 +421,9 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
             let paymentParams = {};
 
             if (purchaseType === 'rent') {
-                // Rentals now go DIRECT to Creator (Direct ETH Transfer)
-                // We bypass the contract to fix the "Unknown Address" issue
-                recipient = content.creatorAddress;
+                // Rentals go through the contract so on-chain rental tracking works
+                // The contract's rentContent() function forwards ETH to the creator
+                recipient = CREATOR_HUB_ADDRESS;
                 paymentParams = {
                     contentId: content.id
                 };
@@ -571,9 +571,9 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
                                                         <div className="flex flex-col items-center py-1 space-y-0.5">
                                                             <div className="flex items-end gap-1">
                                                                 <span className="text-3xl font-black text-white tracking-tighter drop-shadow-lg">
-                                                                    {(Number(activePrice) / 1000000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })}
+                                                                    {(Number(activePrice) / 1e18).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 6 })}
                                                                 </span>
-                                                                <span className="text-xs font-bold text-slate-500 mb-1">USDC</span>
+                                                                <span className="text-xs font-bold text-slate-500 mb-1">ETH</span>
                                                             </div>
                                                             <span className={`text-[9px] font-bold uppercase tracking-widest py-0.5 px-2 rounded-full border ${purchaseType === 'rent' ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-300' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'}`}>
                                                                 {purchaseType === 'rent' ? '24 Hour Access' : 'Lifetime Access (Direct)'}
@@ -598,10 +598,9 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
                                                             )}
                                                         </button>
 
-                                                        {/* Add Token Button */}
                                                         <button
                                                             onClick={addTokenToWallet}
-                                                            className="text-[10px] text-slate-500 hover:text-indigo-400 underline decoration-slate-700 underline-offset-4 transition-colors w-full text-center"
+                                                            className="text-[10px] text-slate-500 hover:text-indigo-400 underline decoration-slate-700 underline-offset-4 transition-colors w-full text-center hidden"
                                                         >
                                                             Don't see USDC? Add to Wallet
                                                         </button>
@@ -728,7 +727,7 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
                                                     <span>{new Date(item.timestamp * 1000).toLocaleDateString()}</span>
                                                     {item.isPremium && (
                                                         <span className="text-indigo-400 font-bold">
-                                                            {(Number(item.price) / 1000000).toFixed(2)}
+                                                            {(Number(item.price) / 1e18).toFixed(4)} ETH
                                                         </span>
                                                     )}
                                                 </div>

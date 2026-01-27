@@ -250,7 +250,7 @@ export default function ExplorePage() {
                                         {item.tier !== 'free' ?
                                             <div className="flex items-center gap-1 text-indigo-400">
                                                 <Lock className="w-3 h-3" />
-                                                <span className="font-mono font-bold">{item.price ? (Number(item.price) / 1000000).toFixed(2) : ''} USDC</span>
+                                                <span className="font-mono font-bold">{item.price ? (Number(item.price) / 1e18).toFixed(4) : ''} ETH</span>
                                             </div>
                                             : <div className="flex items-center gap-1 text-emerald-400"><Unlock className="w-3 h-3" /> Free</div>
                                         }

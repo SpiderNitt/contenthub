@@ -185,9 +185,9 @@ export default function UploadPage() {
 
                 setProgress('Confirming transaction...');
 
-                // Calculate prices (approximate for now, assuming 6 decimals for USDC)
-                const fullPriceBigInt = price ? parseUnits(price, 6) : BigInt(0);
-                const rentPriceBigInt = rentPrice ? parseUnits(rentPrice, 6) : BigInt(0);
+                // Calculate prices in ETH wei (18 decimals) - contract uses native ETH
+                const fullPriceBigInt = price ? parseUnits(price, 18) : BigInt(0);
+                const rentPriceBigInt = rentPrice ? parseUnits(rentPrice, 18) : BigInt(0);
 
                 await walletClient.writeContract({
                     address: CREATOR_HUB_ADDRESS as `0x${string}`,
@@ -199,7 +199,7 @@ export default function UploadPage() {
                         false, // isFree (Premium content is not free by default here)
                         fullPriceBigInt, // fullPrice
                         rentPriceBigInt, // rentedPrice
-                        USDC_SEPOLIA_ADDRESS // paymentToken
+                        '0x0000000000000000000000000000000000000000' as `0x${string}` // Native ETH payment
                     ],
                     account: address
                 });
@@ -398,7 +398,7 @@ export default function UploadPage() {
                     {activeTab === 'premium' && (
                         <div className="grid grid-cols-2 gap-4 p-4 rounded-xl bg-indigo-500/5 border border-indigo-500/20">
                             <div className="space-y-2">
-                                <label className="text-xs font-medium text-indigo-300 ml-1">Buy Price (USDC)</label>
+                                <label className="text-xs font-medium text-indigo-300 ml-1">Buy Price (ETH)</label>
                                 <div className="relative">
                                     <Coins className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                                     <input
@@ -411,7 +411,7 @@ export default function UploadPage() {
                                 </div>
                             </div>
                             <div className="space-y-2">
-                                <label className="text-xs font-medium text-indigo-300 ml-1">Rent Price (USDC)</label>
+                                <label className="text-xs font-medium text-indigo-300 ml-1">Rent Price (ETH)</label>
                                 <div className="relative">
                                     <Coins className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                                     <input

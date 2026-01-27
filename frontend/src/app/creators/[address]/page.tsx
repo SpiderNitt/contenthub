@@ -359,7 +359,7 @@ export default function CreatorProfile(props: { params: Promise<{ address: strin
                                             {item.premium && (
                                                 <span className="flex items-center gap-1 text-indigo-400">
                                                     <Lock className="w-3 h-3" />
-                                                    {item.price ? (Number(item.price) / 1000000).toFixed(2) : ''} USDC
+                                                    {item.price ? (Number(item.price) / 1e18).toFixed(4) : ''} ETH
                                                 </span>
                                             )}
                                         </div>
