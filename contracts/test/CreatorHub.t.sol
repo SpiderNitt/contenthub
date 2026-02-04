@@ -19,10 +19,10 @@ contract CreatorHubTest is Test {
 
     function test_RegisterChannel() public {
         string memory channelName = "Test Channel";
-        
+
         vm.startPrank(creator1);
         hub.registerChannel(channelName);
-        
+
         string memory fetchedName = hub.getChannelName(creator1);
         assertEq(fetchedName, channelName);
         vm.stopPrank();
@@ -31,7 +31,7 @@ contract CreatorHubTest is Test {
     function test_RegisterChannel_RevertIfAlreadyRegistered() public {
         vm.startPrank(creator1);
         hub.registerChannel("Channel 1");
-        
+
         vm.expectRevert("Already registered");
         hub.registerChannel("Channel 1 New");
         vm.stopPrank();
@@ -40,9 +40,9 @@ contract CreatorHubTest is Test {
     function test_UploadVideo() public {
         vm.startPrank(creator1);
         hub.registerChannel("Creator 1");
-        
+
         hub.uploadVideo("My First Video", "QmVideo1", "QmThumb1");
-        
+
         CreatorHub.Video[] memory videos = hub.getLatestVideos(10);
         assertEq(videos.length, 1);
         assertEq(videos[0].title, "My First Video");
@@ -53,7 +53,7 @@ contract CreatorHubTest is Test {
 
     function test_UploadVideo_RevertIfNotRegistered() public {
         vm.startPrank(creator1); // Not registered
-        
+
         vm.expectRevert("Must register channel first");
         hub.uploadVideo("Fail Video", "QmFail", "QmThumbFail");
         vm.stopPrank();
@@ -67,7 +67,7 @@ contract CreatorHubTest is Test {
     function test_GetLatestVideos_Limit() public {
         vm.startPrank(creator1);
         hub.registerChannel("C1");
-        
+
         // Upload 3 videos
         hub.uploadVideo("V1", "C1", "T1");
         hub.uploadVideo("V2", "C2", "T2");

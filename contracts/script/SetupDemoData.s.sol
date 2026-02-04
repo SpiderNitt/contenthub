@@ -24,7 +24,7 @@ contract SetupDemoData is Script {
         // Using publicly available IPFS videos for demo
         // Video 1: Big Buck Bunny trailer
         hub.uploadVideo(
-            "Big Buck Bunny - Open Movie", 
+            "Big Buck Bunny - Open Movie",
             "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG", // Real video CID
             "QmSgvgwxZGaBLqkGyWemEDqikCqU52XxsYLKtdy3vGZ8uq" // Real thumbnail CID
         );
@@ -32,7 +32,7 @@ contract SetupDemoData is Script {
 
         // Video 2: Sintel trailer
         hub.uploadVideo(
-            "Sintel - Open Movie Trailer", 
+            "Sintel - Open Movie Trailer",
             "QmQqzMTavQgT4f4T5v6PWBp7XNKtoPmC9jvn12WPT3gkSE", // Real video CID
             "Qmd286K6pohQcTKYqnS1YhWMscYjDyr712CGXDnUxAwzjg" // Real thumbnail CID
         );

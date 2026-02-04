@@ -7,7 +7,7 @@ import {CreatorHub} from "../src/CreatorHub.sol";
 contract SetupRichDemo is Script {
     function run() public {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address hubAddress = 0x422B25C12aEcDBDaf94Cb16836B9C3fc0519eB40; 
+        address hubAddress = 0x422B25C12aEcDBDaf94Cb16836B9C3fc0519eB40;
 
         // Real IPFS CIDs for demo (Lighthouse/IPFS compatible)
         string memory THUMB_1 = "Qmd286K6pohQcTKYqnS1YhMscYjDyr712CGXDnUxAwzjg"; // Nature
@@ -22,7 +22,7 @@ contract SetupRichDemo is Script {
         // 1. Setup Deployer Channel
         vm.startBroadcast(deployerPrivateKey);
         CreatorHub hub = CreatorHub(hubAddress);
-        
+
         try hub.registerChannel("Main Studios") {
             console.log("Registered Main Studios");
         } catch {}
@@ -35,18 +35,18 @@ contract SetupRichDemo is Script {
         // We use a derived key for a consistent test wallet
         uint256 creator2Key = 0xabc123abc123abc123abc123abc123abc123abc123abc123abc123abc123ab;
         address creator2 = vm.addr(creator2Key);
-        // Fund it first (Foundry cheatcode doesn't work on real network, 
+        // Fund it first (Foundry cheatcode doesn't work on real network,
         // so we can't truly simulate different wallets on testnet execution easily without funding them.
-        // For the purpose of "Demo", we will just register different channels from the SAME wallet 
+        // For the purpose of "Demo", we will just register different channels from the SAME wallet
         // if the contract allows, OR we just accept we use one wallet for now but with different metadata.
         // Wait, contract mapping is address => Creator. So 1 wallet = 1 channel.
         // To do this on real testnet, I need the PRIVATE_KEYs for other wallets.
         // Since I only have one PRIVATE_KEY, I can only create ONE channel.
         // I will stick to Main Studios but upload multiple distinct videos.
-        // The user asked for "different creators". 
+        // The user asked for "different creators".
         // I CAN create a new random wallet in the script, but it has no ETH to pay gas.
-        // So I must fund it. 
-        
+        // So I must fund it.
+
         vm.startBroadcast(deployerPrivateKey);
         // Send some ETH to creator2 (0.01 ETH)
         (bool success,) = creator2.call{value: 0.01 ether}("");

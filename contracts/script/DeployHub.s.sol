@@ -9,7 +9,7 @@ contract DeployHub is Script {
 
     function run() public {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        
+
         vm.startBroadcast(deployerPrivateKey);
 
         CreatorHub hub = new CreatorHub();
