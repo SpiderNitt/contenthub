@@ -30,6 +30,8 @@ contract CreatorHub {
     mapping(address => mapping(address => uint256)) public subscriptions;
     // Mapping from User -> ContentId -> Expiry Timestamp (Rentals)
     mapping(address => mapping(uint256 => uint256)) public rentals;
+    // Mapping from User -> ContentId -> Purchased Lifetime Access
+    mapping(address => mapping(uint256 => bool)) public purchases;
     
     // Array of all videos for showcase
     Video[] public allVideos;
@@ -64,6 +66,7 @@ contract CreatorHub {
     event ContentCreated(uint256 indexed contentId, address indexed creator, string metadataURI);
     event Subscribed(address indexed subscriber, address indexed creator, uint256 expiry);
     event ContentRented(address indexed renter, uint256 indexed contentId, uint256 expiry);
+    event ContentPurchased(address indexed buyer, uint256 indexed contentId);
     event SubscriptionPriceUpdated(address indexed creator, uint256 newPrice);
 
     address[] public allCreators;
@@ -106,16 +109,16 @@ contract CreatorHub {
         }
 
         subscriptions[msg.sender][_creator] = newExpiry;
-        
-        // Transfer funds to creator
-        (bool sent, ) = payable(_creator).call{value: msg.value}("");
-        require(sent, "Failed to send Ether");
 
-        // Update Stats - only increment for NEW subscribers
+        // Update stats before external call
         if (currentExpiry <= block.timestamp) {
             creators[_creator].subscriberCount++;
         }
         creators[_creator].totalEarnings += msg.value;
+        
+        // Transfer funds to creator
+        (bool sent, ) = payable(_creator).call{value: msg.value}("");
+        require(sent, "Failed to send Ether");
 
         emit Subscribed(msg.sender, _creator, newExpiry);
     }
@@ -131,14 +134,30 @@ contract CreatorHub {
         uint256 newExpiry = block.timestamp + 24 hours;
         rentals[msg.sender][_contentId] = newExpiry;
 
+        // Update stats before external call
+        creators[c.creatorAddress].totalEarnings += msg.value;
+
         // Transfer funds to creator
         (bool sent, ) = payable(c.creatorAddress).call{value: msg.value}("");
         require(sent, "Failed to send Ether");
 
-        // Update Stats (Optional: add content specific earnings later)
+        emit ContentRented(msg.sender, _contentId, newExpiry);
+    }
+
+    function buyContent(uint256 _contentId) external payable {
+        Content memory c = contents[_contentId];
+        require(c.active, "Content not active");
+        require(c.fullPrice > 0, "Content not for sale");
+        require(msg.value >= c.fullPrice, "Insufficient payment");
+        require(!purchases[msg.sender][_contentId], "Already purchased");
+
+        purchases[msg.sender][_contentId] = true;
         creators[c.creatorAddress].totalEarnings += msg.value;
 
-        emit ContentRented(msg.sender, _contentId, newExpiry);
+        (bool sent, ) = payable(c.creatorAddress).call{value: msg.value}("");
+        require(sent, "Failed to send Ether");
+
+        emit ContentPurchased(msg.sender, _contentId);
     }
 
     function checkRental(address _user, uint256 _contentId) external view returns (bool) {
@@ -147,6 +166,10 @@ contract CreatorHub {
 
     function checkSubscription(address _subscriber, address _creator) external view returns (bool) {
         return subscriptions[_subscriber][_creator] > block.timestamp;
+    }
+
+    function checkPurchase(address _user, uint256 _contentId) external view returns (bool) {
+        return purchases[_user][_contentId];
     }
 
     function getChannelName(address _wallet) external view returns (string memory) {
