@@ -36,10 +36,13 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
                 error: 'Service configuration error'
             }, { status: 500 });
         }
-        console.warn('[AUTHORIZE] Using dev secret (DEV MODE ONLY)');
+        console.warn('[AUTHORIZE] No signing secret configured - requests will be rejected in production');
+        return NextResponse.json({
+            error: 'Signing secret not configured'
+        }, { status: 500 });
     }
 
-    const signingSecret = SIGNING_SECRET || 'dev-secret-only-for-local-testing';
+    const signingSecret = SIGNING_SECRET;
 
     // Parse and validate request body
     let body;
