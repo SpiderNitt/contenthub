@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomInt } from 'crypto';
 import { verifyPrivyToken, unauthorizedResponse } from '@/lib/auth';
 import { isValidBlobId, isValidWalletAddress, createSignature } from '@/lib/validation';
 import { checkContentAccess } from '@/lib/subscription';
@@ -11,8 +12,6 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
 
     // Validate contentId format
     const { id: contentId } = params;
-    console.log(`[API] Authorize request for ID: ${contentId}`);
-
     if (!isValidBlobId(contentId)) {
         console.error(`[API] Invalid Blob ID: ${contentId}`);
         // Allow numeric IDs for premium content
@@ -54,25 +53,21 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         }, { status: 400 });
     }
 
-    const creatorAddress = body.creatorAddress;
+    const { creatorAddress, walletAddress } = body;
 
-    // Validate creator address if provided
     if (creatorAddress && !isValidWalletAddress(creatorAddress)) {
         return NextResponse.json({
             error: 'Invalid creator address format'
         }, { status: 400 });
     }
 
-    // Get user's wallet address from Privy claims
-    // Note: userClaims.userId might be the wallet address or a Privy user ID
-    // In production, you'd need to map this to the actual wallet address
-    const userWalletAddress = userClaims.userId; // Assuming this is the wallet address
-
-    if (!isValidWalletAddress(userWalletAddress)) {
+    if (!walletAddress || !isValidWalletAddress(walletAddress)) {
         return NextResponse.json({
-            error: 'Invalid user wallet address'
+            error: 'walletAddress is required and must be a valid EVM address'
         }, { status: 400 });
     }
+
+    const userWalletAddress = walletAddress;
 
     // Check on-chain access
     const accessCheck = await checkContentAccess(
@@ -97,7 +92,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         userWallet: userWalletAddress,
         issuedAt: now,
         expiry,
-        nonce: Math.floor(Math.random() * 1000000)
+        nonce: randomInt(1000000)
     };
 
     // Create signature
