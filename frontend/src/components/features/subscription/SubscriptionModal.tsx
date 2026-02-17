@@ -35,7 +35,7 @@ interface SubscriptionModalProps {
 
 export default function SubscriptionModal({ isOpen, onClose, plan, onSuccess }: SubscriptionModalProps) {
     const { handlePayment, paymentState, setPaymentState, resetPayment, error: paymentError } = useX402();
-    const { getAccessToken } = usePrivy();
+    const { getAccessToken, user } = usePrivy();
     const router = useRouter();
     const [error, setError] = useState('');
 
@@ -56,8 +56,6 @@ export default function SubscriptionModal({ isOpen, onClose, plan, onSuccess }: 
                 }
             };
 
-            console.log("[SubscriptionModal] Starting direct payment:", metadata);
-
             // 2. Trigger Payment
             let txHash;
             try {
@@ -67,21 +65,13 @@ export default function SubscriptionModal({ isOpen, onClose, plan, onSuccess }: 
                 throw paymentErr;
             }
 
-            console.log("[SubscriptionModal] Payment confirmed:", txHash);
-
-            // 3. Save Proof to Local Storage
+            // 3. Save Proof to Local Storage (keyed by user wallet address)
             if (txHash) {
-                const storageKey = `subscriptions_${plan.creatorAddress}`; // Unique key per creator? Or user?
-                // Actually we probably want subscriptions_[UserAddress] -> { [CreatorAddress]: TxHash }
-                // But for now let's stick to a simple key we can verify easily
-                // Let's use `subscriptions` object in local storage
-
-                // We need the user address for key
-                // But we don't have it easily here without calling hook again or passing it
-                // We can just save it globally for this browser session
-                const storeKey = `subscriptions_local`;
+                const walletAddress = user?.wallet?.address;
+                if (!walletAddress) throw new Error('Wallet not connected');
+                const storeKey = `subscriptions_${walletAddress}`;
                 const currentSubs = JSON.parse(localStorage.getItem(storeKey) || '{}');
-                currentSubs[plan.creatorAddress] = {
+                currentSubs[plan.creatorAddress.toLowerCase()] = {
                     txHash,
                     tierId: plan.tierId,
                     timestamp: Date.now(),
