@@ -25,7 +25,9 @@ export function verifySignature(payload: any, signature: string, secret: string)
 }
 
 export function generateNonce(): number {
-    return Math.floor(Math.random() * 1000000);
+    const array = new Uint32Array(1);
+    crypto.getRandomValues(array);
+    return array[0] % 1000000;
 }
 
 export function generateIdempotencyKey(): string {
