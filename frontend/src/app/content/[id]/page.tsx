@@ -9,6 +9,7 @@ import { baseSepolia } from 'viem/chains';
 import { CREATOR_HUB_ADDRESS, CREATOR_HUB_ABI, NEXT_PUBLIC_IPFS_GATEWAY, USDC_SEPOLIA_ADDRESS, CHAIN_ID } from '@/config/constants';
 import { useX402 } from '@/hooks/useX402';
 import { motion, AnimatePresence } from 'framer-motion';
+import lighthouse from '@lighthouse-web3/sdk';
 
 interface ContentData {
     id: string;
@@ -25,6 +26,7 @@ interface ContentData {
     timestamp: number;
     paymentToken: string;
     isLegacy?: boolean;
+    encrypted?: boolean;
 }
 
 const GATEWAY = NEXT_PUBLIC_IPFS_GATEWAY || "https://gateway.lighthouse.storage/ipfs/";
@@ -64,6 +66,8 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
 
     // Purchase Options State
     const [purchaseType, setPurchaseType] = useState<'rent' | 'buy'>('rent');
+    const [decrypting, setDecrypting] = useState(false);
+    const [decryptedVideoUrl, setDecryptedVideoUrl] = useState<string | null>(null);
 
     useEffect(() => {
         async function fetchContent() {
@@ -144,7 +148,6 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
                                     ? metadataURI.replace('ipfs://', GATEWAY)
                                     : `${GATEWAY}${metadataURI}`;
 
-                            console.log('Fetching metadata:', { metadataURI, gatewayUrl });
                             const metaRes = await fetch(gatewayUrl);
 
                             if (!metaRes.ok) {
@@ -197,7 +200,8 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
                             videoCID: metadata.video ? metadata.video.replace('ipfs://', '') : '',
                             thumbnailCID: metadata.thumbnail ? metadata.thumbnail.replace('ipfs://', '') : '',
                             timestamp: metadata.createdAt ? Math.floor(metadata.createdAt / 1000) : Math.floor(Date.now() / 1000),
-                            paymentToken: paymentToken
+                            paymentToken: paymentToken,
+                            encrypted: metadata.encrypted === true
                         };
 
                         if (isFree) setAuthorized(true);
@@ -338,7 +342,6 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
                 const subProof = storedSubs[content!.creatorAddress.toLowerCase()];
 
                 if (rentalProof) {
-                    console.log("[Access] Found rental proof in storage:", rentalProof);
                     setAuthorized(true);
                     return;
                 }
@@ -348,10 +351,16 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
                     const subscribedAt = subProof.timestamp;
                     const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
                     if (now - subscribedAt < thirtyDaysMs) {
-                        console.log("[Access] Found subscription proof in storage");
                         setAuthorized(true);
                         return;
                     }
+                }
+
+                const storageKeyPurchases = `purchases_${user?.wallet?.address}`;
+                const storedPurchases = JSON.parse(localStorage.getItem(storageKeyPurchases) || '{}');
+                if (storedPurchases[content!.id]) {
+                    setAuthorized(true);
+                    return;
                 }
 
                 const client = createPublicClient({
@@ -360,7 +369,7 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
                 });
 
                 // 2. Fallback: Check Contract (Legacy)
-                const [isSubscribed, isRented] = await Promise.all([
+                const [isSubscribed, isRented, isPurchased] = await Promise.all([
                     client.readContract({
                         address: CREATOR_HUB_ADDRESS as `0x${string}`,
                         abi: CREATOR_HUB_ABI,
@@ -372,10 +381,16 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
                         abi: CREATOR_HUB_ABI,
                         functionName: 'checkRental',
                         args: [user?.wallet?.address as `0x${string}`, BigInt(content!.id)]
+                    }) as Promise<boolean>,
+                    client.readContract({
+                        address: CREATOR_HUB_ADDRESS as `0x${string}`,
+                        abi: CREATOR_HUB_ABI,
+                        functionName: 'checkPurchase',
+                        args: [user?.wallet?.address as `0x${string}`, BigInt(content!.id)]
                     }) as Promise<boolean>
                 ]);
 
-                if (isSubscribed || isRented) {
+                if (isSubscribed || isRented || isPurchased) {
                     setAuthorized(true);
                     return;
                 }
@@ -391,7 +406,7 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
     }, [content, authenticated, paymentState, user]);
 
     const checkAuthorization = async () => {
-        if (!content || !authenticated) return;
+        if (!content || !authenticated || !user?.wallet?.address) return;
         try {
             const token = await getAccessToken();
             const res = await fetch(`/api/content/${params.id}/authorize`, {
@@ -401,7 +416,8 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    creatorAddress: content.creatorAddress
+                    creatorAddress: content.creatorAddress,
+                    walletAddress: user.wallet.address
                 })
             });
             const data = await res.json();
@@ -421,16 +437,12 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
             let paymentParams = {};
 
             if (purchaseType === 'rent') {
-                // Rentals go through the contract so on-chain rental tracking works
-                // The contract's rentContent() function forwards ETH to the creator
                 recipient = CREATOR_HUB_ADDRESS;
-                paymentParams = {
-                    contentId: content.id
-                };
+                paymentParams = { contentId: content.id };
+            } else {
+                recipient = CREATOR_HUB_ADDRESS;
+                paymentParams = { contentId: content.id, purchaseType: 'buy' };
             }
-            // 'buy' (Lifetime/Full Price) currently falls back to direct transfer 
-            // as CreatorHub doesn't have a 'buyContent' function yet. 
-            // TODO: Implement 'buyContent' in contract for verifiable ownership.
 
             const txHash = await handlePayment({
                 chainId: CHAIN_ID,
@@ -441,17 +453,84 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
             });
 
             // If successful, save Proof of Payment to Local Storage for Persistence
-            if (txHash && purchaseType === 'rent') {
-                const storageKey = `rentals_${user?.wallet?.address}`;
-                const currentRentals = JSON.parse(localStorage.getItem(storageKey) || '{}');
-                currentRentals[content.id] = txHash;
-                localStorage.setItem(storageKey, JSON.stringify(currentRentals));
-                console.log("[Payment] Saved rental proof:", txHash);
+            if (txHash) {
+                if (purchaseType === 'rent') {
+                    const storageKey = `rentals_${user?.wallet?.address}`;
+                    const currentRentals = JSON.parse(localStorage.getItem(storageKey) || '{}');
+                    currentRentals[content.id] = txHash;
+                    localStorage.setItem(storageKey, JSON.stringify(currentRentals));
+                } else {
+                    const storageKey = `purchases_${user?.wallet?.address}`;
+                    const currentPurchases = JSON.parse(localStorage.getItem(storageKey) || '{}');
+                    currentPurchases[content.id] = txHash;
+                    localStorage.setItem(storageKey, JSON.stringify(currentPurchases));
+                }
             }
         } catch (e) {
             console.error(e);
         }
     };
+
+    useEffect(() => {
+        let createdObjectUrl: string | null = null;
+
+        async function decryptPremiumVideo() {
+            if (!authorized || !content?.encrypted || !content.videoCID) {
+                setDecrypting(false);
+                setDecryptedVideoUrl((current) => {
+                    if (current?.startsWith('blob:')) {
+                        URL.revokeObjectURL(current);
+                    }
+                    return null;
+                });
+                return;
+            }
+
+            if (!user?.wallet?.address || !wallets[0]) {
+                return;
+            }
+
+            try {
+                setDecrypting(true);
+                const viewerAddress = user.wallet.address;
+                const provider = await wallets[0].getEthereumProvider();
+                const authMessage = await lighthouse.getAuthMessage(viewerAddress);
+                const signedMessage = await provider.request({
+                    method: 'personal_sign',
+                    params: [authMessage.message, viewerAddress]
+                }) as string;
+
+                const keyResponse = await lighthouse.fetchEncryptionKey(content.videoCID, viewerAddress, signedMessage);
+                const decryptionKey = keyResponse?.data?.key;
+                if (!decryptionKey) {
+                    throw new Error('Failed to fetch encryption key');
+                }
+
+                const decryptedFile = await lighthouse.decryptFile(content.videoCID, decryptionKey);
+                createdObjectUrl = URL.createObjectURL(decryptedFile as Blob);
+
+                setDecryptedVideoUrl((current) => {
+                    if (current?.startsWith('blob:')) {
+                        URL.revokeObjectURL(current);
+                    }
+                    return createdObjectUrl;
+                });
+            } catch (e) {
+                console.error('Failed to decrypt content:', e);
+                setDecryptedVideoUrl(null);
+            } finally {
+                setDecrypting(false);
+            }
+        }
+
+        decryptPremiumVideo();
+
+        return () => {
+            if (createdObjectUrl) {
+                URL.revokeObjectURL(createdObjectUrl);
+            }
+        };
+    }, [authorized, content?.encrypted, content?.videoCID, user?.wallet?.address, wallets]);
 
     if (loading) {
         return (
@@ -621,13 +700,34 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
 
                             {/* Video Element */}
                             {authorized ? (
-                                <video
-                                    src={`${GATEWAY}${content.videoCID}`}
-                                    controls
-                                    autoPlay
-                                    className="w-full h-full object-contain"
-                                    poster={`${GATEWAY}${content.thumbnailCID}`}
-                                />
+                                content.encrypted ? (
+                                    decrypting ? (
+                                        <div className="w-full h-full flex flex-col items-center justify-center bg-black text-slate-300 gap-3">
+                                            <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
+                                            <p>Decrypting content...</p>
+                                        </div>
+                                    ) : decryptedVideoUrl ? (
+                                        <video
+                                            src={decryptedVideoUrl}
+                                            controls
+                                            autoPlay
+                                            className="w-full h-full object-contain"
+                                            poster={`${GATEWAY}${content.thumbnailCID}`}
+                                        />
+                                    ) : (
+                                        <div className="w-full h-full flex items-center justify-center bg-black text-slate-400">
+                                            <p>Unable to decrypt content.</p>
+                                        </div>
+                                    )
+                                ) : (
+                                    <video
+                                        src={`${GATEWAY}${content.videoCID}`}
+                                        controls
+                                        autoPlay
+                                        className="w-full h-full object-contain"
+                                        poster={`${GATEWAY}${content.thumbnailCID}`}
+                                    />
+                                )
                             ) : (
                                 <img
                                     src={`${GATEWAY}${content.thumbnailCID}`}

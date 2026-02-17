@@ -1,4 +1,5 @@
 import lighthouse from '@lighthouse-web3/sdk';
+import kavach from '@lighthouse-web3/kavach';
 
 /**
  * Lighthouse Storage Client
@@ -9,6 +10,24 @@ export interface UploadResult {
     success: boolean;
     cid?: string;
     error?: string;
+}
+
+interface EthereumProvider {
+    request(args: { method: string; params?: readonly unknown[] }): Promise<unknown>;
+}
+
+interface LighthouseAuthMessage {
+    message: string;
+}
+
+interface LighthouseUploadEntry {
+    Hash?: string;
+    hash?: string;
+    cid?: string;
+}
+
+interface LighthouseEncryptedUploadResponse {
+    data?: LighthouseUploadEntry[];
 }
 
 /**
@@ -44,6 +63,68 @@ export async function uploadToLighthouse(
             error: error instanceof Error ? error.message : 'Upload failed'
         };
     }
+}
+
+export async function getLighthouseAuthMessage(publicKey: string): Promise<LighthouseAuthMessage> {
+    return lighthouse.getAuthMessage(publicKey).catch(() => kavach.getAuthMessage(publicKey));
+}
+
+export async function signLighthouseAuthMessage(
+    provider: EthereumProvider,
+    walletAddress: string
+): Promise<string> {
+    const authMessage = await getLighthouseAuthMessage(walletAddress);
+    const signed = await provider.request({
+        method: 'personal_sign',
+        params: [authMessage.message, walletAddress]
+    });
+
+    if (typeof signed !== 'string' || signed.length === 0) {
+        throw new Error('Failed to sign Lighthouse auth message');
+    }
+
+    return signed;
+}
+
+export function extractLighthouseCid(output: LighthouseEncryptedUploadResponse): string {
+    const cid = output?.data?.[0]?.Hash ?? output?.data?.[0]?.hash ?? output?.data?.[0]?.cid;
+    if (!cid) {
+        throw new Error('Upload failed - no CID returned');
+    }
+    return cid;
+}
+
+export async function uploadEncryptedToLighthouse(
+    file: File,
+    apiKey: string,
+    walletAddress: string,
+    signedMessage: string
+): Promise<string> {
+    const output = await lighthouse.uploadEncrypted(file, apiKey, walletAddress, signedMessage);
+    return extractLighthouseCid(output as LighthouseEncryptedUploadResponse);
+}
+
+export async function fetchLighthouseEncryptionKey(
+    cid: string,
+    walletAddress: string,
+    signedMessage: string
+): Promise<string> {
+    const response = await lighthouse.fetchEncryptionKey(cid, walletAddress, signedMessage);
+    const key = response?.data?.key;
+
+    if (!key) {
+        throw new Error('Failed to fetch Lighthouse encryption key');
+    }
+
+    return key;
+}
+
+export async function decryptLighthouseFile(cid: string, encryptionKey: string): Promise<Blob> {
+    const output = await lighthouse.decryptFile(cid, encryptionKey);
+    if (!(output instanceof Blob)) {
+        throw new Error('Invalid decrypted file output');
+    }
+    return output;
 }
 
 /**

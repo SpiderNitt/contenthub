@@ -1,20 +1,20 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { usePrivy } from '@privy-io/react-auth';
+import { useState } from 'react';
+import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useWalletClient, useReadContract, usePublicClient } from 'wagmi';
 import { Upload, X, Image as ImageIcon, Video, Loader2, Coins, UserPlus } from 'lucide-react';
-import { CREATOR_HUB_ADDRESS, CREATOR_HUB_ABI, LIGHTHOUSE_API_KEY, USDC_SEPOLIA_ADDRESS } from '@/config/constants';
-import lighthouse from '@lighthouse-web3/sdk';
+import { CREATOR_HUB_ADDRESS, CREATOR_HUB_ABI } from '@/config/constants';
 import { parseUnits } from 'viem';
 import * as Tabs from '@radix-ui/react-tabs';
-import { useRouter } from 'next/navigation';
+import lighthouse from '@lighthouse-web3/sdk';
+import kavach from '@lighthouse-web3/kavach';
 
 export default function UploadPage() {
     const { authenticated, login, user } = usePrivy();
+    const { wallets } = useWallets();
     const { data: walletClient } = useWalletClient();
     const publicClient = usePublicClient();
-    const router = useRouter();
 
     const [activeTab, setActiveTab] = useState('showcase'); // 'showcase' | 'premium'
 
@@ -43,20 +43,7 @@ export default function UploadPage() {
         }
     });
 
-    // Debug: Validate Lighthouse API Key
-    useEffect(() => {
-        const validateKey = async () => {
-            if (!LIGHTHOUSE_API_KEY) return;
-            try {
-                console.log('Validating Lighthouse Key:', LIGHTHOUSE_API_KEY.substring(0, 6) + '...');
-                const balance = await lighthouse.getBalance(LIGHTHOUSE_API_KEY);
-                console.log('Lighthouse Key Valid. Balance:', balance);
-            } catch (e) {
-                console.error('Lighthouse Key Validation Failed:', e);
-            }
-        };
-        validateKey();
-    }, []);
+    const { getAccessToken } = usePrivy();
 
     const isRegistered = creatorData ? (creatorData as any)[2] : false; // creatorData returns tuple: [name, wallet, isRegistered, subPrice]
 
@@ -113,50 +100,69 @@ export default function UploadPage() {
         }
     };
 
-    const uploadToLighthouse = async (file: File) => {
-        const output = await lighthouse.upload(
-            [file],
-            LIGHTHOUSE_API_KEY,
-            undefined,
-            (progressData: any) => {
-                let percentage = 0;
-                if (progressData?.total && progressData?.uploaded) {
-                    percentage = Math.round((progressData.uploaded / progressData.total) * 100);
-                } else if (progressData?.progress) {
-                    percentage = Math.round(progressData.progress); // Assuming 0-100 based on SDK behavior
-                }
-                setProgress(`Uploading ${file.type.split('/')[0]}: ${percentage}%`);
-            }
-        );
-        return output.data.Hash;
+    const uploadFile = async (file: File): Promise<string> => {
+        setProgress(`Uploading ${file.type.split('/')[0]}...`);
+        const token = await getAccessToken();
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const res = await fetch('/api/upload', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+            body: formData
+        });
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({ error: 'Upload failed' }));
+            throw new Error(err.error || `Upload failed (${res.status})`);
+        }
+
+        const { cid } = await res.json();
+        return cid;
+    };
+
+    const getLighthouseSignedMessage = async (walletAddress: string): Promise<string> => {
+        const wallet = wallets[0];
+        if (!wallet) {
+            throw new Error('Wallet is not connected');
+        }
+
+        const provider = await wallet.getEthereumProvider();
+        const authMessage = await lighthouse.getAuthMessage(walletAddress).catch(() => kavach.getAuthMessage(walletAddress));
+        const signedMessage = await provider.request({
+            method: 'personal_sign',
+            params: [authMessage.message, walletAddress]
+        }) as string;
+
+        if (!signedMessage) {
+            throw new Error('Failed to sign Lighthouse auth message');
+        }
+
+        return signedMessage;
+    };
+
+    const getEncryptedUploadCid = (response: unknown): string => {
+        const parsed = response as { data?: Array<{ Hash?: string; hash?: string; cid?: string }> };
+        const cid = parsed?.data?.[0]?.Hash ?? parsed?.data?.[0]?.hash ?? parsed?.data?.[0]?.cid;
+        if (!cid) {
+            throw new Error('Encrypted upload failed - no CID returned');
+        }
+        return cid;
     };
 
     const handleUpload = async () => {
         if (!file || !thumbnail || !title || !walletClient) return;
 
-        if (!LIGHTHOUSE_API_KEY) {
-            alert('Lighthouse API Key is missing. Please add NEXT_PUBLIC_LIGHTHOUSE_API_KEY to your .env file.');
-            console.error('Missing LIGHTHOUSE_API_KEY');
-            return;
-        }
-
-        console.log('Using Lighthouse API Key:', {
-            length: LIGHTHOUSE_API_KEY.length,
-            prefix: LIGHTHOUSE_API_KEY.substring(0, 4) + '...'
-        });
-
         try {
             setUploading(true);
             setProgress('Starting upload...');
-
-            // 1. Upload assets to IPFS
-            const videoCID = await uploadToLighthouse(file);
-            const thumbnailCID = await uploadToLighthouse(thumbnail);
 
             const address = walletClient.account.address;
 
             if (activeTab === 'showcase') {
                 // Legacy Showcase Upload
+                const videoCID = await uploadFile(file);
+                const thumbnailCID = await uploadFile(thumbnail);
                 setProgress('Confirming transaction...');
                 await walletClient.writeContract({
                     address: CREATOR_HUB_ADDRESS as `0x${string}`,
@@ -167,6 +173,43 @@ export default function UploadPage() {
                 });
             } else {
                 // Premium Content Upload
+                if (!publicClient) {
+                    throw new Error('Public client not available');
+                }
+
+                setProgress('Fetching upload credentials...');
+                const token = await getAccessToken();
+                const keyResponse = await fetch(`/api/upload/key?walletAddress=${address}`, {
+                    method: 'GET',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (!keyResponse.ok) {
+                    const err = await keyResponse.json().catch(() => ({ error: 'Failed to fetch Lighthouse API key' }));
+                    throw new Error(err.error || `Failed to fetch Lighthouse API key (${keyResponse.status})`);
+                }
+
+                const { apiKey } = await keyResponse.json() as { apiKey?: string };
+                if (!apiKey) {
+                    throw new Error('Missing Lighthouse API key');
+                }
+
+                setProgress('Signing encryption request...');
+                const signedMessage = await getLighthouseSignedMessage(address);
+
+                setProgress('Encrypting and uploading video...');
+                const encryptedUploadResponse = await lighthouse.uploadEncrypted(file, apiKey, address, signedMessage);
+                const videoCID = getEncryptedUploadCid(encryptedUploadResponse);
+
+                setProgress('Uploading thumbnail...');
+                const thumbnailCID = await uploadFile(thumbnail);
+
+                const nextContentId = await publicClient.readContract({
+                    address: CREATOR_HUB_ADDRESS as `0x${string}`,
+                    abi: CREATOR_HUB_ABI,
+                    functionName: 'nextContentId'
+                }) as bigint;
+
                 setProgress('Uploading metadata...');
 
                 // Create Metadata JSON
@@ -176,12 +219,13 @@ export default function UploadPage() {
                     video: `ipfs://${videoCID}`,
                     thumbnail: `ipfs://${thumbnailCID}`,
                     contentType: 'video',
+                    encrypted: true,
                     createdAt: Date.now()
                 };
 
                 const metadataBlob = new Blob([JSON.stringify(metadata)], { type: 'application/json' });
                 const metadataFile = new File([metadataBlob], 'metadata.json');
-                const metadataCID = await uploadToLighthouse(metadataFile);
+                const metadataCID = await uploadFile(metadataFile);
 
                 setProgress('Confirming transaction...');
 
@@ -189,7 +233,7 @@ export default function UploadPage() {
                 const fullPriceBigInt = price ? parseUnits(price, 18) : BigInt(0);
                 const rentPriceBigInt = rentPrice ? parseUnits(rentPrice, 18) : BigInt(0);
 
-                await walletClient.writeContract({
+                const txHash = await walletClient.writeContract({
                     address: CREATOR_HUB_ADDRESS as `0x${string}`,
                     abi: CREATOR_HUB_ABI,
                     functionName: 'createContent',
@@ -203,6 +247,53 @@ export default function UploadPage() {
                     ],
                     account: address
                 });
+
+                await publicClient.waitForTransactionReceipt({ hash: txHash });
+
+                const conditions = [
+                    {
+                        id: 1,
+                        chain: 'BaseSepolia',
+                        method: 'checkSubscription',
+                        standardContractType: 'Custom',
+                        contractAddress: CREATOR_HUB_ADDRESS,
+                        returnValueTest: { comparator: '==', value: 'true' },
+                        parameters: [':userAddress', address],
+                        inputArrayType: ['address', 'address'],
+                        outputType: 'bool'
+                    },
+                    {
+                        id: 2,
+                        chain: 'BaseSepolia',
+                        method: 'checkRental',
+                        standardContractType: 'Custom',
+                        contractAddress: CREATOR_HUB_ADDRESS,
+                        returnValueTest: { comparator: '==', value: 'true' },
+                        parameters: [':userAddress', nextContentId.toString()],
+                        inputArrayType: ['address', 'uint256'],
+                        outputType: 'bool'
+                    },
+                    {
+                        id: 3,
+                        chain: 'BaseSepolia',
+                        method: 'checkPurchase',
+                        standardContractType: 'Custom',
+                        contractAddress: CREATOR_HUB_ADDRESS,
+                        returnValueTest: { comparator: '==', value: 'true' },
+                        parameters: [':userAddress', nextContentId.toString()],
+                        inputArrayType: ['address', 'uint256'],
+                        outputType: 'bool'
+                    }
+                ];
+
+                setProgress('Applying access conditions...');
+                await lighthouse.applyAccessCondition(
+                    address,
+                    videoCID,
+                    signedMessage,
+                    conditions,
+                    '([1] or [2] or [3])'
+                );
             }
 
             setProgress('Success! Processing...');
