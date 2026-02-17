@@ -26,13 +26,16 @@ export async function isRegisteredCreator(
             transport: http()
         });
 
-        // @ts-ignore
         const channelName = await client.readContract({
             address: CREATOR_HUB_ADDRESS as Address,
             abi: CREATOR_HUB_ABI,
             functionName: 'getChannelName',
             args: [userAddress]
-        }) as string;
+        });
+
+        if (typeof channelName !== 'string') {
+            return false;
+        }
 
         // If channel name is not "Unknown Channel", user is registered
         return channelName !== "Unknown Channel";
@@ -55,9 +58,17 @@ export async function isRegisteredCreator(
 export async function checkContentAccess(
     userAddress: Address,
     contentId: string,
-    creatorAddress: Address
+    creatorAddress: Address | undefined
 ): Promise<AccessCheckResult> {
     try {
+        // Deny access if creator address is missing
+        if (!creatorAddress) {
+            return {
+                hasAccess: false,
+                reason: 'Creator address missing'
+            };
+        }
+
         // Check if user is the creator (always has access to own content)
         if (userAddress.toLowerCase() === creatorAddress.toLowerCase()) {
             return {
@@ -74,13 +85,12 @@ export async function checkContentAccess(
 
         // 1. Check Rental (24h Access)
         try {
-            // @ts-ignore
             const hasRental = await publicClient.readContract({
                 address: CREATOR_HUB_ADDRESS as Address,
                 abi: CREATOR_HUB_ABI,
                 functionName: 'checkRental',
                 args: [userAddress, BigInt(contentId)]
-            }) as boolean;
+            });
 
             if (hasRental) {
                 return {
@@ -94,13 +104,12 @@ export async function checkContentAccess(
 
         // 2. Check Subscription (30 Days)
         try {
-            // @ts-ignore
             const hasSubscription = await publicClient.readContract({
                 address: CREATOR_HUB_ADDRESS as Address,
                 abi: CREATOR_HUB_ABI,
                 functionName: 'checkSubscription',
                 args: [userAddress, creatorAddress]
-            }) as boolean;
+            });
 
             if (hasSubscription) {
                 return {
