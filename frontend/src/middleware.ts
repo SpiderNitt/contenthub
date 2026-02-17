@@ -16,7 +16,7 @@ const securityHeaders = {
 };
 
 // Content Security Policy
-const CSP = `default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://auth.privy.io https://verify.walletconnect.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https: blob:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https: wss: https://auth.privy.io https://rpc.walletconnect.com https://sepolia.base.org; frame-src 'self' https://verify.walletconnect.com https://auth.privy.io; media-src 'self' https: blob:;`;
+const CSP = `default-src 'self'; script-src 'self' 'unsafe-inline' https://auth.privy.io https://verify.walletconnect.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https: blob:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https: wss: https://auth.privy.io https://rpc.walletconnect.com https://sepolia.base.org; frame-src 'self' https://verify.walletconnect.com https://auth.privy.io; media-src 'self' https: blob:;`;
 
 export function middleware(request: NextRequest) {
     const response = NextResponse.next();
@@ -37,7 +37,7 @@ export function middleware(request: NextRequest) {
 
         if (process.env.NODE_ENV === 'development' ||
             (origin && allowedOrigins.includes(origin))) {
-            response.headers.set('Access-Control-Allow-Origin', origin || '*');
+            response.headers.set('Access-Control-Allow-Origin', origin ?? '*');
             response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
             response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Payment');
             response.headers.set('Access-Control-Max-Age', '86400');
