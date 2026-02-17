@@ -217,8 +217,8 @@ export function useX402() {
                     let txData = '0x';
                     // Encode Content ID as data if present
                     if (metadata.paymentParameter?.contentId) {
-                        // Pad to 32 bytes (64 hex chars)
-                        const contentIdHex = BigInt(metadata.paymentParameter.contentId).toString(16).padStart(64, '0');
+                        // Pad to 32 bytes (64 hex chars) - encode for contract
+                        txData = '0x' + BigInt(metadata.paymentParameter.contentId).toString(16).padStart(64, '0');
                     } else if (metadata.paymentParameter?.minerOf) {
                         // Subscription: Encode creator address
                         // Pad to 32 bytes (64 hex chars)
