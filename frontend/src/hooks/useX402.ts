@@ -12,7 +12,8 @@ interface PaymentMetadata {
     recipient: string;
     paymentParameter?: {
         minerOf?: string;
-        contentId?: string; // For rentals
+        contentId?: string;
+        purchaseType?: 'rent' | 'buy';
     };
 }
 
@@ -60,12 +61,6 @@ export function useX402() {
             // Validate metadata first
             validateMetadata(metadata);
 
-            console.log("[x402] Starting payment flow...", {
-                user: user?.wallet?.address,
-                wallets: wallets.map(w => w.address),
-                metadata
-            });
-
             // Find matching wallet
             const wallet = wallets.find(w => w.address.toLowerCase() === user?.wallet?.address?.toLowerCase());
             if (!wallet) {
@@ -78,10 +73,7 @@ export function useX402() {
             const currentChainId = chainIdStr.includes(':') ? Number(chainIdStr.split(':')[1]) : Number(chainIdStr);
             const targetChainId = Number(metadata.chainId);
 
-            console.log("[x402] Chain Check:", { currentChainId, targetChainId });
-
             if (currentChainId !== targetChainId) {
-                console.log("[x402] Switching chain...");
                 try {
                     await wallet.switchChain(targetChainId);
                 } catch (err: any) {
@@ -110,7 +102,7 @@ export function useX402() {
                     throw new Error(`Insufficient ETH balance. You have ${balanceFormatted} ETH but need ${requiredFormatted} ETH + gas. Get testnet ETH from https://www.alchemy.com/faucets/base-sepolia`);
                 }
 
-                console.log("[x402] ETH Balance check passed");
+
             } catch (err: any) {
                 if (err.message.includes('Insufficient ETH')) {
                     throw err;
@@ -134,7 +126,7 @@ export function useX402() {
                         const balanceFmt = (Number(tokenBalance) / 1000000).toFixed(2);
                         throw new Error(`Insufficient USDC balance. Have: ${balanceFmt}, Need: ${requiredFmt}. Get free testnet USDC from faucet.circle.com`);
                     }
-                    console.log("[x402] Token Balance check passed");
+
                 } catch (err: any) {
                     if (err.message.includes('Insufficient USDC')) throw err;
                     console.warn("[x402] Token balance check skipped:", err);
@@ -146,14 +138,11 @@ export function useX402() {
             let txHash: string;
 
             if (metadata.recipient === CREATOR_HUB_ADDRESS) {
-                // Smart contract interaction
-                console.log("[x402] Smart Contract Interaction:", metadata);
-
                 if (metadata.paymentParameter?.contentId) {
-                    // Rental: rentContent(uint256 _contentId)
+                    const fnName = metadata.paymentParameter.purchaseType === 'buy' ? 'buyContent' : 'rentContent';
                     const data = encodeFunctionData({
                         abi: CREATOR_HUB_ABI,
-                        functionName: 'rentContent',
+                        functionName: fnName,
                         args: [BigInt(metadata.paymentParameter.contentId)]
                     });
 
@@ -248,13 +237,10 @@ export function useX402() {
                 }
             }
 
-            console.log("[x402] Payment TX sent:", txHash);
             setPaymentState('confirming');
 
             // 5. Wait for transaction confirmation
             // Reuse publicClient from balance check
-            console.log("[x402] Waiting for transaction confirmation...");
-
             try {
                 const receipt = await publicClient.waitForTransactionReceipt({
                     hash: txHash as `0x${string}`,
@@ -266,7 +252,6 @@ export function useX402() {
                     throw new Error("Transaction failed on-chain");
                 }
 
-                console.log("[x402] Transaction confirmed:", receipt);
                 setPaymentState('verifying');
 
                 return txHash;

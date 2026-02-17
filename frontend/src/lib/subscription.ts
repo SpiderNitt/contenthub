@@ -121,16 +121,25 @@ export async function checkContentAccess(
             console.error('Error checking subscription:', e);
         }
 
-        // For now, in development, grant access to all authenticated users ONLY if manually bypassed
-        // Removing auto-grant to enforce payment testing
-        /*
-        const isDev = process.env.NODE_ENV !== 'production';
-        if (isDev) {
-             console.log('[Access] Dev mode: Strict payment check active.');
-        }
-        */
+        // 3. Check Purchase (Lifetime Access)
+        try {
+            const hasPurchase = await publicClient.readContract({
+                address: CREATOR_HUB_ADDRESS as Address,
+                abi: CREATOR_HUB_ABI,
+                functionName: 'checkPurchase',
+                args: [userAddress, BigInt(contentId)]
+            });
 
-        // Deny access if no valid payment found
+            if (hasPurchase) {
+                return {
+                    hasAccess: true,
+                    reason: 'Lifetime Purchase'
+                };
+            }
+        } catch (e) {
+            console.error('Error checking purchase:', e);
+        }
+
         return {
             hasAccess: false,
             reason: 'Payment required'
