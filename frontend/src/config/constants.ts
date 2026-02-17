@@ -62,10 +62,3 @@ export const CREATOR_HUB_ABI = CreatorHubABI.abi;
 
 // IPFS
 export const NEXT_PUBLIC_IPFS_GATEWAY = "https://gateway.lighthouse.storage/ipfs/";
-
-// Require API key from environment - never hardcode
-const lighthouseApiKey = process.env.LIGHTHOUSE_API_KEY;
-if (!lighthouseApiKey) {
-    console.warn('[WARN] LIGHTHOUSE_API_KEY not set - upload functionality will fail');
-}
-export const LIGHTHOUSE_API_KEY = lighthouseApiKey;
