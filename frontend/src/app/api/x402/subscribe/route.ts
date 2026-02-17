@@ -47,13 +47,11 @@ function checkRateLimit(identifier: string): boolean {
 
 async function verifyTransaction(
     txHash: string,
+    expectedSender: string,
     expectedRecipient: string,
     minAmount: bigint
 ): Promise<{ valid: boolean; error?: string }> {
     try {
-        console.log(`[x402] Verifying TX: ${txHash}`);
-
-        // 1. Get Transaction and Receipt
         let tx, receipt;
         try {
             tx = await publicClient.getTransaction({
@@ -68,30 +66,26 @@ async function verifyTransaction(
         }
 
         if (receipt.status !== 'success') {
-            console.error("[x402] TX failed on-chain");
             return { valid: false, error: "Transaction failed on-chain" };
         }
 
-        // 2. Verify Recipient
+        if (tx.from.toLowerCase() !== expectedSender.toLowerCase()) {
+            console.error(`[x402] Sender mismatch. Got ${tx.from}, expected ${expectedSender}`);
+            return { valid: false, error: "Transaction sender does not match authenticated user" };
+        }
+
         if (tx.to?.toLowerCase() !== expectedRecipient.toLowerCase()) {
             console.error(`[x402] Wrong recipient. Got ${tx.to}, expected ${expectedRecipient}`);
             return { valid: false, error: "Invalid recipient" };
         }
 
-        // 3. Verify Amount
         if (tx.value < minAmount) {
-            console.error(`[x402] Insufficient amount. Got ${tx.value}, need ${minAmount}`);
             return {
                 valid: false,
-                error: `Insufficient payment amount. Required: ${minAmount}, Got: ${tx.value}`
+                error: `Insufficient payment. Required: ${minAmount}, Got: ${tx.value}`
             };
         }
 
-        console.log("[x402] Verification Successful", {
-            txHash,
-            amount: tx.value.toString(),
-            recipient: expectedRecipient
-        });
         return { valid: true };
 
     } catch (e: any) {
@@ -129,13 +123,18 @@ export async function POST(req: NextRequest) {
         }, { status: 400 });
     }
 
-    const { creatorAddress, tierId, idempotencyKey } = body;
+    const { creatorAddress, tierId, idempotencyKey, walletAddress } = body;
 
-    // Validate required fields
-    if (!creatorAddress || tierId === undefined) {
+    if (!creatorAddress || tierId === undefined || !walletAddress) {
         return NextResponse.json({
             error: 'Missing required fields',
-            details: 'creatorAddress and tierId are required'
+            details: 'creatorAddress, tierId, and walletAddress are required'
+        }, { status: 400 });
+    }
+
+    if (!isValidWalletAddress(walletAddress)) {
+        return NextResponse.json({
+            error: 'Invalid wallet address format'
         }, { status: 400 });
     }
 
@@ -161,13 +160,9 @@ export async function POST(req: NextRequest) {
         }, { status: 400 });
     }
 
-    console.log(`[x402] Processing subscription for ${userClaims.userId} to ${creatorAddress}`);
-
-    // Check for payment proof header
     const paymentProof = req.headers.get('X-PAYMENT');
 
     if (paymentProof) {
-        console.log(`[x402] Processing Payment Proof: ${paymentProof}`);
 
         // Validate transaction hash format
         if (!isValidTransactionHash(paymentProof)) {
@@ -181,14 +176,13 @@ export async function POST(req: NextRequest) {
         if (idempotencyKey) {
             const cached = processedPayments.get(idempotencyKey);
             if (cached && (Date.now() - cached.timestamp) < IDEMPOTENCY_TTL) {
-                console.log(`[x402] Returning cached result for idempotency key: ${idempotencyKey}`);
                 return NextResponse.json(cached.result);
             }
         }
 
-        // Verify the transaction
         const verification = await verifyTransaction(
             paymentProof,
+            walletAddress,
             creatorAddress,
             BigInt(MOCK_PRICE_WEI)
         );
