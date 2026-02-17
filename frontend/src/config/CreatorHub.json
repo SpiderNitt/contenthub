@@ -376,7 +376,7 @@
             ],
             "stateMutability": "view",
             "type": "function",
-            "name": "cret",
+            "name": "creators",
             "outputs": [
                 {
                     "internalType": "string",

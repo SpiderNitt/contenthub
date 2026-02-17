@@ -25,7 +25,7 @@ contract CreatorHub {
     }
 
     // Mapping from wallet to Creator
-    mapping(address => Creator) public cret;
+    mapping(address => Creator) public creators;
     // Mapping from Subscriber -> Creator -> Expiry Timestamp
     mapping(address => mapping(address => uint256)) public subscriptions;
     // Mapping from User -> ContentId -> Expiry Timestamp (Rentals)
@@ -70,9 +70,9 @@ contract CreatorHub {
 
     function registerChannel(string memory _name) external {
         require(bytes(_name).length > 0, "Name required");
-        require(!cret[msg.sender].isRegistered, "Already registered");
+        require(!creators[msg.sender].isRegistered, "Already registered");
         
-        cret[msg.sender] = Creator({
+        creators[msg.sender] = Creator({
             name: _name,
             wallet: msg.sender,
             isRegistered: true,
@@ -87,14 +87,14 @@ contract CreatorHub {
     }
 
     function setSubscriptionPrice(uint256 _price) external {
-        require(cret[msg.sender].isRegistered, "Not registered");
-        cret[msg.sender].subscriptionPrice = _price;
+        require(creators[msg.sender].isRegistered, "Not registered");
+        creators[msg.sender].subscriptionPrice = _price;
         emit SubscriptionPriceUpdated(msg.sender, _price);
     }
 
     function subscribe(address _creator) external payable {
-        require(cret[_creator].isRegistered, "Creator not registered");
-        require(msg.value >= cret[_creator].subscriptionPrice, "Insufficient payment");
+        require(creators[_creator].isRegistered, "Creator not registered");
+        require(msg.value >= creators[_creator].subscriptionPrice, "Insufficient payment");
 
         uint256 currentExpiry = subscriptions[msg.sender][_creator];
         uint256 newExpiry;
@@ -111,9 +111,11 @@ contract CreatorHub {
         (bool sent, ) = payable(_creator).call{value: msg.value}("");
         require(sent, "Failed to send Ether");
 
-        // Update Stats
-        cret[_creator].subscriberCount++;
-        cret[_creator].totalEarnings += msg.value;
+        // Update Stats - only increment for NEW subscribers
+        if (currentExpiry <= block.timestamp) {
+            creators[_creator].subscriberCount++;
+        }
+        creators[_creator].totalEarnings += msg.value;
 
         emit Subscribed(msg.sender, _creator, newExpiry);
     }
@@ -134,7 +136,7 @@ contract CreatorHub {
         require(sent, "Failed to send Ether");
 
         // Update Stats (Optional: add content specific earnings later)
-        cret[c.creatorAddress].totalEarnings += msg.value;
+        creators[c.creatorAddress].totalEarnings += msg.value;
 
         emit ContentRented(msg.sender, _contentId, newExpiry);
     }
@@ -148,8 +150,8 @@ contract CreatorHub {
     }
 
     function getChannelName(address _wallet) external view returns (string memory) {
-        if (cret[_wallet].isRegistered) {
-            return cret[_wallet].name;
+        if (creators[_wallet].isRegistered) {
+            return creators[_wallet].name;
         }
         return "Unknown Channel";
     }
@@ -159,7 +161,7 @@ contract CreatorHub {
         Creator[] memory creatorsList = new Creator[](total);
         
         for(uint256 i = 0; i < total; i++) {
-            creatorsList[i] = cret[allCreators[i]];
+            creatorsList[i] = creators[allCreators[i]];
         }
         return creatorsList;
     }
@@ -169,7 +171,7 @@ contract CreatorHub {
         string memory _videoCID,
         string memory _thumbnailCID
     ) external {
-        require(cret[msg.sender].isRegistered, "Must register channel first");
+        require(creators[msg.sender].isRegistered, "Must register channel first");
         
         Video memory newVideo = Video({
             title: _title,
@@ -229,7 +231,7 @@ contract CreatorHub {
         uint256 rentedPrice,
         address paymentToken
     ) external returns (uint256) {
-        require(cret[msg.sender].isRegistered, "Only registered creators can create content");
+        require(creators[msg.sender].isRegistered, "Only registered creators can create content");
         require(bytes(metadataURI).length > 0, "Invalid metadataURI");
         
         if (isFree) {

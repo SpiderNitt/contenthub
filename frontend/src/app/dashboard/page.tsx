@@ -27,7 +27,7 @@ export default function DashboardPage() {
     const { data: creatorData, isLoading: isLoadingCreator, refetch: refetchCreator } = useReadContract({
         address: CREATOR_HUB_ADDRESS,
         abi: CREATOR_HUB_ABI,
-        functionName: 'cret',
+        functionName: 'creators',
         args: [address],
         query: {
             enabled: !!address,

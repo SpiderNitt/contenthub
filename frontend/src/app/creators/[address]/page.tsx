@@ -53,7 +53,7 @@ export default function CreatorProfile(props: { params: Promise<{ address: strin
                 const profileData = await client.readContract({
                     address: CREATOR_HUB_ADDRESS as `0x${string}`,
                     abi: CREATOR_HUB_ABI,
-                    functionName: 'cret',
+                    functionName: 'creators',
                     args: [params.address as `0x${string}`]
                 }) as [string, string, boolean, bigint, bigint, bigint];
 

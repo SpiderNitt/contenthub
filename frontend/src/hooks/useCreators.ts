@@ -40,7 +40,7 @@ export function useCreator(address: string) {
     const { data: rawCreator, isLoading, error } = useReadContract({
         address: CREATOR_HUB_ADDRESS as `0x${string}`,
         abi: CREATOR_HUB_ABI,
-        functionName: 'cret',
+        functionName: 'creators',
         args: [address as `0x${string}`],
     });
 

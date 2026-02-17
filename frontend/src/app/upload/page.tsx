@@ -37,7 +37,7 @@ export default function UploadPage() {
     const { data: creatorData, refetch: refetchCreator } = useReadContract({
         address: CREATOR_HUB_ADDRESS as `0x${string}`,
         abi: CREATOR_HUB_ABI,
-        functionName: 'cret',
+        functionName: 'creators',
         args: user?.wallet?.address ? [user.wallet.address as `0x${string}`] : undefined,
         query: {
         }
