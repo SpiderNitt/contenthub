@@ -211,6 +211,21 @@ contract CreatorHubTest is Test {
         hub.buyContent{value: FULL_PRICE}(contentId);
     }
 
+    function test_CreateContent_RevertIfNonZeroPaymentTokenForPaidContent() public {
+        _registerCreator(creator1, "Creator 1");
+
+        vm.prank(creator1);
+        vm.expectRevert("Only native ETH is supported");
+        hub.createContent(
+            CreatorHub.ContentType.VIDEO,
+            "ipfs://paid-content",
+            false,
+            FULL_PRICE,
+            RENT_PRICE,
+            address(0xBEEF)
+        );
+    }
+
     function test_CheckPurchase_ReturnsTrueAfterBuy() public {
         uint256 contentId = _createPaidContent(creator1);
 
@@ -237,7 +252,7 @@ contract CreatorHubTest is Test {
             false,
             FULL_PRICE,
             RENT_PRICE,
-            address(0xBEEF)
+            address(0)
         );
     }
 }

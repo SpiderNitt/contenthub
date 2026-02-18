@@ -261,7 +261,7 @@ contract CreatorHub {
             require(fullPrice == 0, "Free content fullPrice must be 0");
             require(rentedPrice == 0, "Free content rentedPrice must be 0");
         } else {
-            require(paymentToken != address(0), "Payment token required");
+            require(paymentToken == address(0), "Only native ETH is supported");
             require(rentedPrice > 0, "rentedPrice must be > 0");
             require(fullPrice >= rentedPrice, "fullPrice must be >= rentedPrice");
         }
