@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyPrivyToken, unauthorizedResponse } from '@/lib/auth';
+import { verifyPrivyToken, unauthorizedResponse, verifyWalletOwnership } from '@/lib/auth';
 import { createPublicClient, http } from 'viem';
 import { baseSepolia } from 'viem/chains';
 import { isValidTransactionHash, isValidWalletAddress, isValidTierId } from '@/lib/validation';
@@ -136,6 +136,13 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({
             error: 'Invalid wallet address format'
         }, { status: 400 });
+    }
+
+    const isWalletOwned = await verifyWalletOwnership(userClaims.userId, walletAddress);
+    if (!isWalletOwned) {
+        return NextResponse.json({
+            error: 'walletAddress does not belong to authenticated user'
+        }, { status: 403 });
     }
 
     // Validate creator address format

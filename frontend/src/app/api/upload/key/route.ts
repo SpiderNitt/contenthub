@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPublicClient, http, isAddress } from 'viem';
 import { baseSepolia } from 'viem/chains';
-import { verifyPrivyToken, unauthorizedResponse } from '@/lib/auth';
+import { verifyPrivyToken, unauthorizedResponse, verifyWalletOwnership } from '@/lib/auth';
 import { CREATOR_HUB_ABI, CREATOR_HUB_ADDRESS } from '@/config/constants';
 
 const LIGHTHOUSE_API_KEY = process.env.LIGHTHOUSE_API_KEY;
@@ -30,6 +30,14 @@ export async function GET(req: NextRequest) {
         return NextResponse.json(
             { error: 'walletAddress query param is required' },
             { status: 400 }
+        );
+    }
+
+    const isWalletOwned = await verifyWalletOwnership(userClaims.userId, walletAddress);
+    if (!isWalletOwned) {
+        return NextResponse.json(
+            { error: 'walletAddress does not belong to authenticated user' },
+            { status: 403 }
         );
     }
 

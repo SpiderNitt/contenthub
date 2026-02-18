@@ -32,6 +32,24 @@ export async function verifyPrivyToken(req: NextRequest) {
   }
 }
 
+export async function verifyWalletOwnership(userId: string, walletAddress: string) {
+  if (!privy) {
+    return false;
+  }
+
+  try {
+    const [walletUser, smartWalletUser] = await Promise.all([
+      privy.getUserByWalletAddress(walletAddress),
+      privy.getUserBySmartWalletAddress(walletAddress),
+    ]);
+
+    return walletUser?.id === userId || smartWalletUser?.id === userId;
+  } catch (error) {
+    console.error('[AUTH] Wallet ownership verification failed:', error);
+    return false;
+  }
+}
+
 export function unauthorizedResponse() {
   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 }

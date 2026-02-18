@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomInt } from 'crypto';
-import { verifyPrivyToken, unauthorizedResponse } from '@/lib/auth';
+import { verifyPrivyToken, unauthorizedResponse, verifyWalletOwnership } from '@/lib/auth';
 import { isValidBlobId, isValidWalletAddress, createSignature } from '@/lib/validation';
 import { checkContentAccess } from '@/lib/subscription';
 
@@ -65,6 +65,13 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         return NextResponse.json({
             error: 'walletAddress is required and must be a valid EVM address'
         }, { status: 400 });
+    }
+
+    const isWalletOwned = await verifyWalletOwnership(userClaims.userId, walletAddress);
+    if (!isWalletOwned) {
+        return NextResponse.json({
+            error: 'walletAddress does not belong to authenticated user'
+        }, { status: 403 });
     }
 
     const userWalletAddress = walletAddress;
