@@ -332,43 +332,11 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
                     return;
                 }
 
-                // 1. Check Local Storage "Proof of Payment" (Direct Logic)
-                const storageKeyRentals = `rentals_${user?.wallet?.address}`;
-                const storedRentals = JSON.parse(localStorage.getItem(storageKeyRentals) || '{}');
-                const rentalProof = storedRentals[content!.id];
-
-                const storageKeySubs = `subscriptions_${user?.wallet?.address}`;
-                const storedSubs = JSON.parse(localStorage.getItem(storageKeySubs) || '{}');
-                const subProof = storedSubs[content!.creatorAddress.toLowerCase()];
-
-                if (rentalProof) {
-                    setAuthorized(true);
-                    return;
-                }
-
-                if (subProof) {
-                    const now = Date.now();
-                    const subscribedAt = subProof.timestamp;
-                    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
-                    if (now - subscribedAt < thirtyDaysMs) {
-                        setAuthorized(true);
-                        return;
-                    }
-                }
-
-                const storageKeyPurchases = `purchases_${user?.wallet?.address}`;
-                const storedPurchases = JSON.parse(localStorage.getItem(storageKeyPurchases) || '{}');
-                if (storedPurchases[content!.id]) {
-                    setAuthorized(true);
-                    return;
-                }
-
                 const client = createPublicClient({
                     chain: baseSepolia,
                     transport: http()
                 });
 
-                // 2. Fallback: Check Contract (Legacy)
                 const [isSubscribed, isRented, isPurchased] = await Promise.all([
                     client.readContract({
                         address: CREATOR_HUB_ADDRESS as `0x${string}`,
