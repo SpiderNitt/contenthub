@@ -4,9 +4,9 @@ import { useEffect, useState, use } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { Loader2, Lock, Play, Pause, Volume2, Maximize, User, ShieldCheck, CheckCircle, AlertCircle, Share2, Wallet } from 'lucide-react';
 import Link from 'next/link';
-import { createPublicClient, http, formatEther } from 'viem';
+import { createPublicClient, http, formatUnits } from 'viem';
 import { baseSepolia } from 'viem/chains';
-import { CREATOR_HUB_ADDRESS, CREATOR_HUB_ABI, NEXT_PUBLIC_IPFS_GATEWAY, USDC_SEPOLIA_ADDRESS, CHAIN_ID } from '@/config/constants';
+import { CREATOR_HUB_ADDRESS, CREATOR_HUB_ABI, NEXT_PUBLIC_IPFS_GATEWAY, USDC_SEPOLIA_ADDRESS, USDC_DECIMALS } from '@/config/constants';
 import { useX402 } from '@/hooks/useX402';
 import { motion, AnimatePresence } from 'framer-motion';
 import lighthouse from '@lighthouse-web3/sdk';
@@ -396,29 +396,48 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
     };
 
     const handleBuy = async () => {
-        if (!content) return;
+        if (!content || !user?.wallet?.address) return;
         try {
-            const amount = purchaseType === 'rent' ? content.rentPrice : content.price;
+            const accessToken = await getAccessToken();
+            const action = purchaseType === 'buy' ? 'buy' : 'rent';
+            const requestBody = {
+                contentId: content.id,
+                action,
+                walletAddress: user.wallet.address,
+                idempotencyKey: `content-${content.id}-${action}-${user.wallet.address.toLowerCase()}-${Date.now()}`
+            };
 
-            // Determine recipient and parameters based on purchase type
-            let recipient = content.creatorAddress;
-            let paymentParams = {};
+            const challengeRes = await fetch('/api/x402/content', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            });
 
-            if (purchaseType === 'rent') {
-                recipient = CREATOR_HUB_ADDRESS;
-                paymentParams = { contentId: content.id };
-            } else {
-                recipient = CREATOR_HUB_ADDRESS;
-                paymentParams = { contentId: content.id, purchaseType: 'buy' };
+            if (challengeRes.status !== 402) {
+                const challengeData = await challengeRes.json().catch(() => ({}));
+                throw new Error(challengeData.error || `Failed to get payment challenge (${challengeRes.status})`);
             }
 
-            const txHash = await handlePayment({
-                chainId: CHAIN_ID,
-                tokenAddress: content.paymentToken,
-                amount: amount,
-                recipient: recipient,
-                paymentParameter: paymentParams
+            const metadata = await challengeRes.json();
+            const txHash = await handlePayment(metadata);
+
+            const verifyRes = await fetch('/api/x402/content', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                    'X-PAYMENT': txHash
+                },
+                body: JSON.stringify(requestBody)
             });
+
+            if (!verifyRes.ok) {
+                const verifyData = await verifyRes.json().catch(() => ({}));
+                throw new Error(verifyData.details || verifyData.error || 'Payment verification failed');
+            }
 
             // If successful, save Proof of Payment to Local Storage for Persistence
             if (txHash) {
@@ -618,12 +637,12 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
                                                         <div className="flex flex-col items-center py-1 space-y-0.5">
                                                             <div className="flex items-end gap-1">
                                                                 <span className="text-3xl font-black text-white tracking-tighter drop-shadow-lg">
-                                                                    {(Number(activePrice) / 1e18).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 6 })}
+                                                                    {formatUnits(BigInt(activePrice), USDC_DECIMALS)}
                                                                 </span>
-                                                                <span className="text-xs font-bold text-slate-500 mb-1">ETH</span>
+                                                                <span className="text-xs font-bold text-slate-500 mb-1">USDC</span>
                                                             </div>
                                                             <span className={`text-[9px] font-bold uppercase tracking-widest py-0.5 px-2 rounded-full border ${purchaseType === 'rent' ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-300' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'}`}>
-                                                                {purchaseType === 'rent' ? '24 Hour Access' : 'Lifetime Access (Direct)'}
+                                                                {purchaseType === 'rent' ? '24 Hour Access' : 'Lifetime Access'}
                                                             </span>
                                                         </div>
 
@@ -795,7 +814,7 @@ export default function ContentPage(props: { params: Promise<{ id: string }> }) 
                                                     <span>{new Date(item.timestamp * 1000).toLocaleDateString()}</span>
                                                     {item.isPremium && (
                                                         <span className="text-indigo-400 font-bold">
-                                                            {(Number(item.price) / 1e18).toFixed(4)} ETH
+                                                            {item.price ? formatUnits(BigInt(item.price), USDC_DECIMALS) : '0'} USDC
                                                         </span>
                                                     )}
                                                 </div>

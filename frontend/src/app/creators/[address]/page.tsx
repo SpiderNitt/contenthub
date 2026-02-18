@@ -6,9 +6,9 @@ import Link from 'next/link';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useSubscription } from '@/hooks/useSubscription';
 import { useX402 } from '@/hooks/useX402';
-import { createPublicClient, createWalletClient, custom, formatEther, http } from 'viem';
+import { createPublicClient, formatUnits, http } from 'viem';
 import { baseSepolia } from 'viem/chains';
-import { CREATOR_HUB_ADDRESS, CREATOR_HUB_ABI, NEXT_PUBLIC_IPFS_GATEWAY } from '@/config/constants';
+import { CREATOR_HUB_ADDRESS, CREATOR_HUB_ABI, NEXT_PUBLIC_IPFS_GATEWAY, USDC_DECIMALS } from '@/config/constants';
 import { motion } from 'framer-motion';
 
 const GATEWAY = NEXT_PUBLIC_IPFS_GATEWAY || "https://gateway.lighthouse.storage/ipfs/";
@@ -26,7 +26,7 @@ interface ContentItem {
 
 export default function CreatorProfile(props: { params: Promise<{ address: string }> }) {
     const params = use(props.params);
-    const { authenticated, user } = usePrivy();
+    const { authenticated, user, getAccessToken } = usePrivy();
     const { wallets } = useWallets();
     const { isSubscribed, isLoading: subLoading, refresh } = useSubscription(params.address);
 
@@ -155,19 +155,50 @@ export default function CreatorProfile(props: { params: Promise<{ address: strin
 
         setIsSubscribing(true);
         try {
-            // Direct Payment to Creator using useX402
-            // Currently subscriptions are priced in ETH (NATIVE) based on contract 'price'
-            // We read the price from the chain but send it directly to the creator
+            const accessToken = await getAccessToken();
+            if (!accessToken || !user?.wallet?.address) {
+                throw new Error('Missing auth token or wallet');
+            }
 
-            const txHash = await handlePayment({
-                chainId: baseSepolia.id,
-                tokenAddress: '0x0000000000000000000000000000000000000000', // Native ETH
-                amount: subscriptionPrice.toString(),
-                recipient: params.address, // Direct to Creator
-                paymentParameter: {
-                    minerOf: params.address // Metadata for subscription intent
-                }
+            const requestBody = {
+                creatorAddress: params.address,
+                tierId: 0,
+                walletAddress: user.wallet.address,
+                idempotencyKey: `creator-sub-${params.address.toLowerCase()}-${user.wallet.address.toLowerCase()}-${Date.now()}`
+            };
+
+            const challengeRes = await fetch('/api/x402/subscribe', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
             });
+
+            if (challengeRes.status !== 402) {
+                const challengeData = await challengeRes.json().catch(() => ({}));
+                throw new Error(challengeData.error || `Failed to get payment challenge (${challengeRes.status})`);
+            }
+
+            const metadata = await challengeRes.json();
+
+            const txHash = await handlePayment(metadata);
+
+            const verifyRes = await fetch('/api/x402/subscribe', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                    'X-PAYMENT': txHash
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            if (!verifyRes.ok) {
+                const verifyData = await verifyRes.json().catch(() => ({}));
+                throw new Error(verifyData.details || verifyData.error || 'Payment verification failed');
+            }
 
             console.log("Subscription tx:", txHash);
 
@@ -281,7 +312,7 @@ export default function CreatorProfile(props: { params: Promise<{ address: strin
                                         >
                                             <span>Subscribe</span>
                                             <span className="text-xs font-normal opacity-60 ml-1">
-                                                for {formatEther(subscriptionPrice)} ETH
+                                                for {formatUnits(subscriptionPrice, USDC_DECIMALS)} USDC
                                             </span>
                                         </button>
                                     )}
@@ -357,10 +388,10 @@ export default function CreatorProfile(props: { params: Promise<{ address: strin
                                         <div className="flex items-center justify-between text-sm text-slate-500">
                                             <span>{item.date}</span>
                                             {item.premium && (
-                                                <span className="flex items-center gap-1 text-indigo-400">
-                                                    <Lock className="w-3 h-3" />
-                                                    {item.price ? (Number(item.price) / 1e18).toFixed(4) : ''} ETH
-                                                </span>
+                                                        <span className="flex items-center gap-1 text-indigo-400">
+                                                            <Lock className="w-3 h-3" />
+                                                            {item.price ? (Number(item.price) / 1e6).toFixed(2) : ''} USDC
+                                                        </span>
                                             )}
                                         </div>
 

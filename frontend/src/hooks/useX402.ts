@@ -14,6 +14,7 @@ interface PaymentMetadata {
         minerOf?: string;
         contentId?: string;
         purchaseType?: 'rent' | 'buy';
+        action?: 'subscribe' | 'rent' | 'buy';
     };
 }
 
@@ -81,7 +82,8 @@ export function useX402() {
                 }
             }
 
-            // 2. Check ETH balance
+            const isNativePayment = !metadata.tokenAddress || metadata.tokenAddress === '0x0000000000000000000000000000000000000000';
+
             const publicClient = createPublicClient({
                 chain: baseSepolia,
                 transport: http()
@@ -92,14 +94,14 @@ export function useX402() {
                     address: wallet.address as `0x${string}`
                 });
 
-                const requiredAmount = BigInt(metadata.amount);
+                const requiredAmount = isNativePayment ? BigInt(metadata.amount) : 0n;
                 const gasBuffer = BigInt("100000000000000"); // 0.0001 ETH for gas
                 const totalRequired = requiredAmount + gasBuffer;
 
                 if (balance < totalRequired) {
                     const balanceFormatted = (Number(balance) / 1e18).toFixed(4);
                     const requiredFormatted = (Number(requiredAmount) / 1e18).toFixed(4);
-                    throw new Error(`Insufficient ETH balance. You have ${balanceFormatted} ETH but need ${requiredFormatted} ETH + gas. Get testnet ETH from https://www.alchemy.com/faucets/base-sepolia`);
+                    throw new Error(`Insufficient ETH for gas${isNativePayment ? ` and payment (${requiredFormatted} ETH)` : ''}. You have ${balanceFormatted} ETH.`);
                 }
 
 
@@ -110,8 +112,7 @@ export function useX402() {
                 console.warn("[x402] Balance check failed, proceeding anyway:", err);
             }
 
-            // 2.5 Check Token Balance (if ERC20)
-            if (metadata.tokenAddress && metadata.tokenAddress !== '0x0000000000000000000000000000000000000000') {
+            if (!isNativePayment) {
                 try {
                     const tokenBalance = await publicClient.readContract({
                         address: metadata.tokenAddress as `0x${string}`,
@@ -138,43 +139,83 @@ export function useX402() {
             let txHash: string;
 
             if (metadata.recipient === CREATOR_HUB_ADDRESS) {
-                if (metadata.paymentParameter?.contentId) {
-                    const fnName = metadata.paymentParameter.purchaseType === 'buy' ? 'buyContent' : 'rentContent';
-                    const data = encodeFunctionData({
-                        abi: CREATOR_HUB_ABI,
-                        functionName: fnName,
-                        args: [BigInt(metadata.paymentParameter.contentId)]
-                    });
+                if (!metadata.paymentParameter) {
+                    throw new Error("Invalid payment parameters for smart contract");
+                }
 
+                const buildContractCall = () => {
+                    if (metadata.paymentParameter?.contentId) {
+                        const fnName = metadata.paymentParameter.purchaseType === 'buy' ? 'buyContent' : 'rentContent';
+                        return encodeFunctionData({
+                            abi: CREATOR_HUB_ABI,
+                            functionName: fnName,
+                            args: [BigInt(metadata.paymentParameter.contentId)]
+                        });
+                    }
+
+                    if (metadata.paymentParameter?.minerOf) {
+                        return encodeFunctionData({
+                            abi: CREATOR_HUB_ABI,
+                            functionName: 'subscribe',
+                            args: [metadata.paymentParameter.minerOf as `0x${string}`]
+                        });
+                    }
+
+                    throw new Error("Invalid payment parameters for smart contract");
+                };
+
+                if (!isNativePayment) {
+                    const requiredTokenAmount = BigInt(metadata.amount);
+                    const allowance = await publicClient.readContract({
+                        address: metadata.tokenAddress as `0x${string}`,
+                        abi: erc20Abi,
+                        functionName: 'allowance',
+                        args: [wallet.address as `0x${string}`, CREATOR_HUB_ADDRESS as `0x${string}`]
+                    }) as bigint;
+
+                    if (allowance < requiredTokenAmount) {
+                        const approveData = encodeFunctionData({
+                            abi: erc20Abi,
+                            functionName: 'approve',
+                            args: [CREATOR_HUB_ADDRESS as `0x${string}`, requiredTokenAmount]
+                        });
+
+                        const approveTx = await provider.request({
+                            method: 'eth_sendTransaction',
+                            params: [{
+                                to: metadata.tokenAddress,
+                                from: wallet.address,
+                                data: approveData
+                            }]
+                        }) as string;
+
+                        await publicClient.waitForTransactionReceipt({
+                            hash: approveTx as `0x${string}`,
+                            timeout: 60_000,
+                            confirmations: 1
+                        });
+                    }
+
+                    const data = buildContractCall();
                     txHash = await provider.request({
                         method: 'eth_sendTransaction',
                         params: [{
                             to: CREATOR_HUB_ADDRESS,
                             from: wallet.address,
-                            data: data,
-                            value: '0x' + BigInt(metadata.amount).toString(16)
-                        }]
-                    }) as string;
-
-                } else if (metadata.paymentParameter?.minerOf) {
-                    // Subscription: subscribe(address _creator)
-                    const data = encodeFunctionData({
-                        abi: CREATOR_HUB_ABI,
-                        functionName: 'subscribe',
-                        args: [metadata.paymentParameter.minerOf as `0x${string}`]
-                    });
-
-                    txHash = await provider.request({
-                        method: 'eth_sendTransaction',
-                        params: [{
-                            to: CREATOR_HUB_ADDRESS,
-                            from: wallet.address,
-                            data: data,
-                            value: '0x' + BigInt(metadata.amount).toString(16)
+                            data
                         }]
                     }) as string;
                 } else {
-                    throw new Error("Invalid payment parameters for smart contract");
+                    const data = buildContractCall();
+                    txHash = await provider.request({
+                        method: 'eth_sendTransaction',
+                        params: [{
+                            to: CREATOR_HUB_ADDRESS,
+                            from: wallet.address,
+                            data,
+                            value: '0x' + BigInt(metadata.amount).toString(16)
+                        }]
+                    }) as string;
                 }
 
             } else if (metadata.tokenAddress && metadata.tokenAddress !== '0x0000000000000000000000000000000000000000') {
@@ -201,40 +242,7 @@ export function useX402() {
                     throw new Error(`ERC20 Transfer failed: ${err.message}`);
                 }
             } else {
-                // Native ETH Transfer (Direct to Creator)
-                try {
-                    let txData = '0x';
-                    // Encode Content ID as data if present
-                    if (metadata.paymentParameter?.contentId) {
-                        // Pad to 32 bytes (64 hex chars) - encode for contract
-                        txData = '0x' + BigInt(metadata.paymentParameter.contentId).toString(16).padStart(64, '0');
-                    } else if (metadata.paymentParameter?.minerOf) {
-                        // Subscription: Encode creator address
-                        // Pad to 32 bytes (64 hex chars)
-                        const minerOfHex = metadata.paymentParameter.minerOf.replace('0x', '').padStart(64, '0');
-                        txData = `0x${minerOfHex}`;
-                    }
-
-                    txHash = await provider.request({
-                        method: 'eth_sendTransaction',
-                        params: [{
-                            to: metadata.recipient,
-                            value: '0x' + BigInt(metadata.amount).toString(16),
-                            from: wallet.address,
-                            data: txData
-                        }]
-                    }) as string;
-                } catch (err: any) {
-                    // Handle user rejection
-                    if (err.code === 4001 || err.message?.includes('User rejected')) {
-                        throw new Error("Transaction rejected by user");
-                    }
-                    // Handle insufficient funds
-                    if (err.message?.includes('insufficient funds')) {
-                        throw new Error("Insufficient ETH for gas fees. You need a small amount of ETH on Base Sepolia.");
-                    }
-                    throw new Error(`Transaction failed: ${err.message || 'Unknown error'}`);
-                }
+                throw new Error('Native token payments are disabled. Use USDC x402 payment metadata.');
             }
 
             setPaymentState('confirming');

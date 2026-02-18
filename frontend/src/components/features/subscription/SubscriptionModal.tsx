@@ -43,32 +43,55 @@ export default function SubscriptionModal({ isOpen, onClose, plan, onSuccess }: 
         try {
             setError('');
             const token = await getAccessToken();
+            const walletAddress = user?.wallet?.address;
+            if (!walletAddress) throw new Error('Wallet not connected');
 
-            // 1. Construct Metadata Locally (Direct Payment to Creator)
-            // We bypass the API to ensure payment goes to Creator Address, not Contract
-            const metadata = {
-                chainId: 84532, // Base Sepolia (Hardcoded or from constants)
-                tokenAddress: '0x0000000000000000000000000000000000000000', // Native ETH
-                amount: (Number(plan.price) * 1e18).toString(), // Convert ETH to Wei (Approximation, ideally use parseEther)
-                recipient: plan.creatorAddress,
-                paymentParameter: {
-                    minerOf: plan.creatorAddress // Encodes creator address in data for verification
-                }
+            const requestBody = {
+                creatorAddress: plan.creatorAddress,
+                tierId: plan.tierId,
+                walletAddress,
+                idempotencyKey: `sub-${plan.creatorAddress.toLowerCase()}-${walletAddress.toLowerCase()}-${Date.now()}`
             };
 
-            // 2. Trigger Payment
+            const challengeRes = await fetch('/api/x402/subscribe', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            if (challengeRes.status !== 402) {
+                const data = await challengeRes.json().catch(() => ({}));
+                throw new Error(data.error || `Failed to get payment challenge (${challengeRes.status})`);
+            }
+
+            const metadata = await challengeRes.json();
+
             let txHash;
             try {
                 txHash = await handlePayment(metadata);
             } catch (paymentErr: any) {
-                // Payment errors are already handled in useX402
                 throw paymentErr;
             }
 
-            // 3. Save Proof to Local Storage (keyed by user wallet address)
+            const verifyRes = await fetch('/api/x402/subscribe', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                    'X-PAYMENT': txHash
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            if (!verifyRes.ok) {
+                const verifyData = await verifyRes.json().catch(() => ({}));
+                throw new Error(verifyData.details || verifyData.error || 'Payment verification failed');
+            }
+
             if (txHash) {
-                const walletAddress = user?.wallet?.address;
-                if (!walletAddress) throw new Error('Wallet not connected');
                 const storeKey = `subscriptions_${walletAddress}`;
                 const currentSubs = JSON.parse(localStorage.getItem(storeKey) || '{}');
                 currentSubs[plan.creatorAddress.toLowerCase()] = {
@@ -80,7 +103,6 @@ export default function SubscriptionModal({ isOpen, onClose, plan, onSuccess }: 
                 localStorage.setItem(storeKey, JSON.stringify(currentSubs));
             }
 
-            // 4. Optimistic Success
             setPaymentState('success');
             setTimeout(() => {
                 onSuccess(plan.tierId);
@@ -102,7 +124,7 @@ export default function SubscriptionModal({ isOpen, onClose, plan, onSuccess }: 
 
                 <div className="p-4 bg-slate-950 rounded-xl border border-slate-800">
                     <div className="text-sm text-slate-400">Price</div>
-                    <div className="text-3xl font-bold text-white">{plan.price} ETH</div>
+                    <div className="text-3xl font-bold text-white">{plan.price} USDC</div>
                     <div className="text-xs text-slate-500">per {plan.period}</div>
                 </div>
 

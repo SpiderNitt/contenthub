@@ -9,6 +9,9 @@ export interface PaymentMetadata {
     recipient: string;
     paymentParameter?: {
         minerOf?: string;
+        contentId?: string;
+        purchaseType?: 'rent' | 'buy';
+        action?: 'subscribe' | 'rent' | 'buy';
     };
 }
 
@@ -35,6 +38,7 @@ export interface PaymentProof {
 export interface SubscriptionRequest {
     creatorAddress: string;
     tierId: number;
+    walletAddress: string;
     idempotencyKey?: string;
 }
 
