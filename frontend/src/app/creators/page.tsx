@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { Users, ArrowRight, ShieldCheck, Upload, Wallet } from 'lucide-react';
 import { useCreators } from '@/hooks/useCreators';
-import { formatEther } from 'viem';
+import { formatUnits } from 'viem';
+import { USDC_DECIMALS } from '@/config/constants';
 
 export default function CreatorsPage() {
     const { creators, isLoading } = useCreators();
@@ -65,7 +66,7 @@ export default function CreatorsPage() {
 
                                 <div className="flex items-center gap-2 mb-6">
                                     <div className="bg-slate-800/50 px-3 py-1 rounded-lg border border-white/5 text-xs text-slate-300">
-                                        Sub: {formatEther(creator.subscriptionPrice)} ETH
+                                        Sub: {formatUnits(creator.subscriptionPrice, USDC_DECIMALS)} USDC
                                     </div>
                                 </div>
 

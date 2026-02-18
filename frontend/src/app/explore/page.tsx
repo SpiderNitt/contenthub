@@ -4,9 +4,9 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { Play, Music, FileText, Lock, Unlock, Search, Loader2 } from 'lucide-react';
-import { createPublicClient, http } from 'viem';
+import { createPublicClient, formatUnits, http } from 'viem';
 import { baseSepolia } from 'viem/chains';
-import { CREATOR_HUB_ADDRESS, CREATOR_HUB_ABI, NEXT_PUBLIC_IPFS_GATEWAY } from '@/config/constants';
+import { CREATOR_HUB_ADDRESS, CREATOR_HUB_ABI, NEXT_PUBLIC_IPFS_GATEWAY, USDC_DECIMALS } from '@/config/constants';
 
 // Data Interface
 interface VideoContent {
@@ -250,7 +250,7 @@ export default function ExplorePage() {
                                         {item.tier !== 'free' ?
                                             <div className="flex items-center gap-1 text-indigo-400">
                                                 <Lock className="w-3 h-3" />
-                                                <span className="font-mono font-bold">{item.price ? (Number(item.price) / 1e18).toFixed(4) : ''} ETH</span>
+                                                <span className="font-mono font-bold">{item.price ? formatUnits(BigInt(item.price), USDC_DECIMALS) : ''} USDC</span>
                                             </div>
                                             : <div className="flex items-center gap-1 text-emerald-400"><Unlock className="w-3 h-3" /> Free</div>
                                         }

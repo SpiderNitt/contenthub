@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useWalletClient, useReadContract, usePublicClient } from 'wagmi';
 import { Upload, X, Image as ImageIcon, Video, Loader2, Coins, UserPlus } from 'lucide-react';
-import { CREATOR_HUB_ADDRESS, CREATOR_HUB_ABI } from '@/config/constants';
+import { CREATOR_HUB_ADDRESS, CREATOR_HUB_ABI, USDC_DECIMALS, USDC_SEPOLIA_ADDRESS } from '@/config/constants';
 import { parseUnits } from 'viem';
 import * as Tabs from '@radix-ui/react-tabs';
 import lighthouse from '@lighthouse-web3/sdk';
@@ -68,7 +68,7 @@ export default function UploadPage() {
 
             // 2. Set Price (if provided)
             if (subPrice && parseFloat(subPrice) > 0) {
-                const priceWei = parseUnits(subPrice, 18); // ETH uses 18 decimals
+            const priceWei = parseUnits(subPrice, USDC_DECIMALS);
                 const hash2 = await walletClient.writeContract({
                     address: CREATOR_HUB_ADDRESS as `0x${string}`,
                     abi: CREATOR_HUB_ABI,
@@ -229,9 +229,8 @@ export default function UploadPage() {
 
                 setProgress('Confirming transaction...');
 
-                // Calculate prices in ETH wei (18 decimals) - contract uses native ETH
-                const fullPriceBigInt = price ? parseUnits(price, 18) : BigInt(0);
-                const rentPriceBigInt = rentPrice ? parseUnits(rentPrice, 18) : BigInt(0);
+                const fullPriceBigInt = price ? parseUnits(price, USDC_DECIMALS) : BigInt(0);
+                const rentPriceBigInt = rentPrice ? parseUnits(rentPrice, USDC_DECIMALS) : BigInt(0);
 
                 const txHash = await walletClient.writeContract({
                     address: CREATOR_HUB_ADDRESS as `0x${string}`,
@@ -243,7 +242,7 @@ export default function UploadPage() {
                         false, // isFree (Premium content is not free by default here)
                         fullPriceBigInt, // fullPrice
                         rentPriceBigInt, // rentedPrice
-                        '0x0000000000000000000000000000000000000000' as `0x${string}` // Native ETH payment
+                        USDC_SEPOLIA_ADDRESS as `0x${string}`
                     ],
                     account: address
                 });
@@ -354,7 +353,7 @@ export default function UploadPage() {
                             />
                         </div>
                         <div>
-                            <label className="text-sm font-medium text-slate-300 ml-1 mb-1 block">Monthly Subscription (ETH) <span className="text-slate-500 text-xs font-normal">(Optional)</span></label>
+                                <label className="text-sm font-medium text-slate-300 ml-1 mb-1 block">Monthly Subscription (USDC) <span className="text-slate-500 text-xs font-normal">(Optional)</span></label>
                             <div className="relative">
                                 <Coins className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
                                 <input
@@ -489,7 +488,7 @@ export default function UploadPage() {
                     {activeTab === 'premium' && (
                         <div className="grid grid-cols-2 gap-4 p-4 rounded-xl bg-indigo-500/5 border border-indigo-500/20">
                             <div className="space-y-2">
-                                <label className="text-xs font-medium text-indigo-300 ml-1">Buy Price (ETH)</label>
+                                            <label className="text-xs font-medium text-indigo-300 ml-1">Buy Price (USDC)</label>
                                 <div className="relative">
                                     <Coins className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                                     <input
@@ -502,7 +501,7 @@ export default function UploadPage() {
                                 </div>
                             </div>
                             <div className="space-y-2">
-                                <label className="text-xs font-medium text-indigo-300 ml-1">Rent Price (ETH)</label>
+                                            <label className="text-xs font-medium text-indigo-300 ml-1">Rent Price (USDC)</label>
                                 <div className="relative">
                                     <Coins className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                                     <input

@@ -2,15 +2,15 @@
 
 import { useState, useEffect } from 'react';
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
-import { CREATOR_HUB_ADDRESS, CREATOR_HUB_ABI, NEXT_PUBLIC_IPFS_GATEWAY } from '@/config/constants';
+import { CREATOR_HUB_ADDRESS, CREATOR_HUB_ABI, NEXT_PUBLIC_IPFS_GATEWAY, USDC_DECIMALS } from '@/config/constants';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { Loader2, Users, DollarSign, Video, Settings, Upload } from 'lucide-react';
-import { formatEther, parseEther } from 'viem';
+import { formatUnits, parseUnits } from 'viem';
 
 // Helper to format currency
 const formatCurrency = (amount: bigint) => {
-    return parseFloat(formatEther(amount)).toFixed(4);
+    return parseFloat(formatUnits(amount, USDC_DECIMALS)).toFixed(2);
 };
 
 export default function DashboardPage() {
@@ -63,7 +63,7 @@ export default function DashboardPage() {
                 address: CREATOR_HUB_ADDRESS,
                 abi: CREATOR_HUB_ABI,
                 functionName: 'setSubscriptionPrice',
-                args: [parseEther(newPrice)]
+                args: [parseUnits(newPrice, USDC_DECIMALS)]
             });
         } catch (error) {
             console.error("Error updating price:", error);
@@ -153,7 +153,7 @@ export default function DashboardPage() {
                         </div>
                         <h3 className="text-lg font-bold text-slate-300">Total Earnings</h3>
                     </div>
-                    <p className="text-4xl font-black text-white">{formatCurrency(totalEarnings)} <span className="text-lg text-slate-500 font-medium">ETH</span></p>
+                    <p className="text-4xl font-black text-white">{formatCurrency(totalEarnings)} <span className="text-lg text-slate-500 font-medium">USDC</span></p>
                 </motion.div>
 
                 {/* Subscribers */}
@@ -200,13 +200,13 @@ export default function DashboardPage() {
 
                         <div className="mb-6">
                             <label className="block text-slate-400 text-sm font-bold mb-2">Current Monthly Price</label>
-                            <div className="text-2xl font-bold text-white mb-1">{formatCurrency(subscriptionPrice)} ETH</div>
-                            <p className="text-xs text-slate-500">Approx. ${(parseFloat(formatEther(subscriptionPrice)) * 2500).toFixed(2)} USD</p>
+                            <div className="text-2xl font-bold text-white mb-1">{formatCurrency(subscriptionPrice)} USDC</div>
+                            <p className="text-xs text-slate-500">Stablecoin-denominated monthly subscription.</p>
                         </div>
 
                         <form onSubmit={handleUpdatePrice}>
                             <div className="mb-4">
-                                <label className="block text-slate-400 text-sm font-bold mb-2">Update Price (ETH)</label>
+                                <label className="block text-slate-400 text-sm font-bold mb-2">Update Price (USDC)</label>
                                 <input
                                     type="number"
                                     step="0.0001"
