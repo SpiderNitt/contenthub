@@ -4,20 +4,55 @@ pragma solidity ^0.8.30;
 import {Test} from "forge-std/Test.sol";
 import {CreatorHub} from "../src/CreatorHub.sol";
 
+contract MockUSDC {
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+
+    function mint(address to, uint256 amount) external {
+        balanceOf[to] += amount;
+    }
+
+    function approve(address spender, uint256 amount) external returns (bool) {
+        allowance[msg.sender][spender] = amount;
+        return true;
+    }
+
+    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+        uint256 allowed = allowance[from][msg.sender];
+        require(allowed >= amount, "insufficient allowance");
+        require(balanceOf[from] >= amount, "insufficient balance");
+
+        allowance[from][msg.sender] = allowed - amount;
+        balanceOf[from] -= amount;
+        balanceOf[to] += amount;
+        return true;
+    }
+}
+
 contract CreatorHubTest is Test {
     CreatorHub public hub;
+    MockUSDC public usdc;
     address public creator1 = address(0x1);
     address public creator2 = address(0x2);
     address public viewer = address(0x3);
-    uint256 internal constant SUB_PRICE = 0.001 ether;
-    uint256 internal constant FULL_PRICE = 1 ether;
-    uint256 internal constant RENT_PRICE = 0.1 ether;
+    uint256 internal constant SUB_PRICE = 1_000_000;
+    uint256 internal constant FULL_PRICE = 5_000_000;
+    uint256 internal constant RENT_PRICE = 1_000_000;
 
     function setUp() public {
-        hub = new CreatorHub();
-        vm.deal(creator1, 100 ether);
-        vm.deal(creator2, 100 ether);
-        vm.deal(viewer, 100 ether);
+        usdc = new MockUSDC();
+        hub = new CreatorHub(address(usdc));
+
+        usdc.mint(creator1, 1_000_000_000);
+        usdc.mint(creator2, 1_000_000_000);
+        usdc.mint(viewer, 1_000_000_000);
+
+        vm.prank(viewer);
+        usdc.approve(address(hub), type(uint256).max);
+        vm.prank(creator1);
+        usdc.approve(address(hub), type(uint256).max);
+        vm.prank(creator2);
+        usdc.approve(address(hub), type(uint256).max);
     }
 
     function test_RegisterChannel() public {
@@ -88,35 +123,40 @@ contract CreatorHubTest is Test {
     function test_Subscribe_SuccessWithCorrectPayment() public {
         _registerCreator(creator1, "Creator 1");
 
-        uint256 creatorBalanceBefore = creator1.balance;
+        uint256 creatorBalanceBefore = usdc.balanceOf(creator1);
         vm.prank(viewer);
-        hub.subscribe{value: SUB_PRICE}(creator1);
+        hub.subscribe(creator1);
 
         assertTrue(hub.checkSubscription(viewer, creator1));
         (, , , , uint256 subscriberCount, uint256 totalEarnings) = hub.creators(creator1);
         assertEq(subscriberCount, 1);
         assertEq(totalEarnings, SUB_PRICE);
-        assertEq(creator1.balance, creatorBalanceBefore + SUB_PRICE);
+        assertEq(usdc.balanceOf(creator1), creatorBalanceBefore + SUB_PRICE);
     }
 
     function test_Subscribe_RevertIfInsufficientPayment() public {
         _registerCreator(creator1, "Creator 1");
 
+        vm.startPrank(viewer);
+        usdc.approve(address(hub), SUB_PRICE - 1);
+        vm.expectRevert("insufficient allowance");
+        hub.subscribe(creator1);
+        vm.stopPrank();
+
         vm.prank(viewer);
-        vm.expectRevert("Insufficient payment");
-        hub.subscribe{value: SUB_PRICE - 1}(creator1);
+        usdc.approve(address(hub), type(uint256).max);
     }
 
     function test_Subscribe_RenewalExtendsExpiryBy30Days() public {
         _registerCreator(creator1, "Creator 1");
 
         vm.prank(viewer);
-        hub.subscribe{value: SUB_PRICE}(creator1);
+        hub.subscribe(creator1);
         uint256 firstExpiry = hub.subscriptions(viewer, creator1);
 
         vm.warp(block.timestamp + 1 days);
         vm.prank(viewer);
-        hub.subscribe{value: SUB_PRICE}(creator1);
+        hub.subscribe(creator1);
         uint256 secondExpiry = hub.subscriptions(viewer, creator1);
 
         assertEq(secondExpiry, firstExpiry + 30 days);
@@ -126,13 +166,13 @@ contract CreatorHubTest is Test {
         _registerCreator(creator1, "Creator 1");
 
         vm.prank(viewer);
-        hub.subscribe{value: SUB_PRICE}(creator1);
+        hub.subscribe(creator1);
         (, , , , uint256 subscriberCountAfterFirst, ) = hub.creators(creator1);
         assertEq(subscriberCountAfterFirst, 1);
 
         vm.warp(block.timestamp + 1 days);
         vm.prank(viewer);
-        hub.subscribe{value: SUB_PRICE}(creator1);
+        hub.subscribe(creator1);
 
         (, , , , uint256 subscriberCountAfterRenewal, uint256 totalEarnings) = hub.creators(creator1);
         assertEq(subscriberCountAfterRenewal, 1);
@@ -142,9 +182,9 @@ contract CreatorHubTest is Test {
     function test_RentContent_Success() public {
         uint256 contentId = _createPaidContent(creator1);
 
-        uint256 creatorBalanceBefore = creator1.balance;
+        uint256 creatorBalanceBefore = usdc.balanceOf(creator1);
         vm.prank(viewer);
-        hub.rentContent{value: RENT_PRICE}(contentId);
+        hub.rentContent(contentId);
 
         assertTrue(hub.checkRental(viewer, contentId));
         uint256 expiry = hub.rentals(viewer, contentId);
@@ -152,7 +192,7 @@ contract CreatorHubTest is Test {
 
         (, , , , , uint256 totalEarnings) = hub.creators(creator1);
         assertEq(totalEarnings, RENT_PRICE);
-        assertEq(creator1.balance, creatorBalanceBefore + RENT_PRICE);
+        assertEq(usdc.balanceOf(creator1), creatorBalanceBefore + RENT_PRICE);
     }
 
     function test_RentContent_RevertIfInactive() public {
@@ -163,41 +203,46 @@ contract CreatorHubTest is Test {
 
         vm.prank(viewer);
         vm.expectRevert("Content not active");
-        hub.rentContent{value: RENT_PRICE}(contentId);
+        hub.rentContent(contentId);
     }
 
     function test_BuyContent_Success() public {
         uint256 contentId = _createPaidContent(creator1);
 
-        uint256 creatorBalanceBefore = creator1.balance;
+        uint256 creatorBalanceBefore = usdc.balanceOf(creator1);
         vm.prank(viewer);
-        hub.buyContent{value: FULL_PRICE}(contentId);
+        hub.buyContent(contentId);
 
         assertTrue(hub.purchases(viewer, contentId));
         assertTrue(hub.checkPurchase(viewer, contentId));
 
         (, , , , , uint256 totalEarnings) = hub.creators(creator1);
         assertEq(totalEarnings, FULL_PRICE);
-        assertEq(creator1.balance, creatorBalanceBefore + FULL_PRICE);
+        assertEq(usdc.balanceOf(creator1), creatorBalanceBefore + FULL_PRICE);
     }
 
     function test_BuyContent_RevertIfAlreadyPurchased() public {
         uint256 contentId = _createPaidContent(creator1);
 
         vm.prank(viewer);
-        hub.buyContent{value: FULL_PRICE}(contentId);
+        hub.buyContent(contentId);
 
         vm.prank(viewer);
         vm.expectRevert("Already purchased");
-        hub.buyContent{value: FULL_PRICE}(contentId);
+        hub.buyContent(contentId);
     }
 
     function test_BuyContent_RevertIfInsufficientPayment() public {
         uint256 contentId = _createPaidContent(creator1);
 
         vm.prank(viewer);
-        vm.expectRevert("Insufficient payment");
-        hub.buyContent{value: FULL_PRICE - 1}(contentId);
+        usdc.approve(address(hub), FULL_PRICE - 1);
+        vm.prank(viewer);
+        vm.expectRevert("insufficient allowance");
+        hub.buyContent(contentId);
+
+        vm.prank(viewer);
+        usdc.approve(address(hub), type(uint256).max);
     }
 
     function test_BuyContent_RevertIfInactive() public {
@@ -208,14 +253,14 @@ contract CreatorHubTest is Test {
 
         vm.prank(viewer);
         vm.expectRevert("Content not active");
-        hub.buyContent{value: FULL_PRICE}(contentId);
+        hub.buyContent(contentId);
     }
 
     function test_CreateContent_RevertIfNonZeroPaymentTokenForPaidContent() public {
         _registerCreator(creator1, "Creator 1");
 
         vm.prank(creator1);
-        vm.expectRevert("Only native ETH is supported");
+        vm.expectRevert("Unsupported payment token");
         hub.createContent(
             CreatorHub.ContentType.VIDEO,
             "ipfs://paid-content",
@@ -232,7 +277,7 @@ contract CreatorHubTest is Test {
         assertFalse(hub.checkPurchase(viewer, contentId));
 
         vm.prank(viewer);
-        hub.buyContent{value: FULL_PRICE}(contentId);
+        hub.buyContent(contentId);
 
         assertTrue(hub.checkPurchase(viewer, contentId));
     }
@@ -252,7 +297,7 @@ contract CreatorHubTest is Test {
             false,
             FULL_PRICE,
             RENT_PRICE,
-            address(0)
+            address(usdc)
         );
     }
 }

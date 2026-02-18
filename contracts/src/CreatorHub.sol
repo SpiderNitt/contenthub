@@ -2,6 +2,10 @@
 
 pragma solidity ^0.8.30;
 
+interface IERC20 {
+    function transferFrom(address from, address to, uint256 value) external returns (bool);
+}
+
 contract CreatorHub {
     /* 
      * Video Showcase & Creator Registry Logic
@@ -19,7 +23,7 @@ contract CreatorHub {
         string name;
         address wallet;
         bool isRegistered;
-        uint256 subscriptionPrice; // Monthly price in WEI (native ETH for now)
+        uint256 subscriptionPrice; // Monthly price in token base units (USDC = 6 decimals)
         uint256 subscriberCount;
         uint256 totalEarnings;
     }
@@ -60,6 +64,7 @@ contract CreatorHub {
     uint256 public nextContentId;
     mapping(uint256 => Content) public contents;
     uint256[] public allContentIds;
+    address public immutable paymentToken;
 
     event ChannelRegistered(address indexed wallet, string name);
     event VideoUploaded(uint256 indexed videoId, address indexed uploader, string title);
@@ -71,6 +76,11 @@ contract CreatorHub {
 
     address[] public allCreators;
 
+    constructor(address _paymentToken) {
+        require(_paymentToken != address(0), "Payment token required");
+        paymentToken = _paymentToken;
+    }
+
     function registerChannel(string memory _name) external {
         require(bytes(_name).length > 0, "Name required");
         require(!creators[msg.sender].isRegistered, "Already registered");
@@ -79,7 +89,7 @@ contract CreatorHub {
             name: _name,
             wallet: msg.sender,
             isRegistered: true,
-            subscriptionPrice: 0.001 ether, // Default price
+            subscriptionPrice: 1_000_000, // Default 1 USDC
             subscriberCount: 0,
             totalEarnings: 0
         });
@@ -95,9 +105,10 @@ contract CreatorHub {
         emit SubscriptionPriceUpdated(msg.sender, _price);
     }
 
-    function subscribe(address _creator) external payable {
+    function subscribe(address _creator) external {
         require(creators[_creator].isRegistered, "Creator not registered");
-        require(msg.value >= creators[_creator].subscriptionPrice, "Insufficient payment");
+        uint256 amount = creators[_creator].subscriptionPrice;
+        require(amount > 0, "Subscription not configured");
 
         uint256 currentExpiry = subscriptions[msg.sender][_creator];
         uint256 newExpiry;
@@ -114,48 +125,44 @@ contract CreatorHub {
         if (currentExpiry <= block.timestamp) {
             creators[_creator].subscriberCount++;
         }
-        creators[_creator].totalEarnings += msg.value;
-        
-        // Transfer funds to creator
-        (bool sent, ) = payable(_creator).call{value: msg.value}("");
-        require(sent, "Failed to send Ether");
+        creators[_creator].totalEarnings += amount;
+
+        bool sent = IERC20(paymentToken).transferFrom(msg.sender, _creator, amount);
+        require(sent, "Token transfer failed");
 
         emit Subscribed(msg.sender, _creator, newExpiry);
     }
 
-    function rentContent(uint256 _contentId) external payable {
+    function rentContent(uint256 _contentId) external {
         Content memory c = contents[_contentId];
         require(c.active, "Content not active");
         require(c.rentedPrice > 0, "Content not for rent");
-        
-        // Check native ETH payment (ignoring ERC20 paymentToken for now to match current simple flow)
-        require(msg.value >= c.rentedPrice, "Insufficient payment");
+        require(c.paymentToken == paymentToken, "Unsupported payment token");
 
         uint256 newExpiry = block.timestamp + 24 hours;
         rentals[msg.sender][_contentId] = newExpiry;
 
         // Update stats before external call
-        creators[c.creatorAddress].totalEarnings += msg.value;
+        creators[c.creatorAddress].totalEarnings += c.rentedPrice;
 
-        // Transfer funds to creator
-        (bool sent, ) = payable(c.creatorAddress).call{value: msg.value}("");
-        require(sent, "Failed to send Ether");
+        bool sent = IERC20(paymentToken).transferFrom(msg.sender, c.creatorAddress, c.rentedPrice);
+        require(sent, "Token transfer failed");
 
         emit ContentRented(msg.sender, _contentId, newExpiry);
     }
 
-    function buyContent(uint256 _contentId) external payable {
+    function buyContent(uint256 _contentId) external {
         Content memory c = contents[_contentId];
         require(c.active, "Content not active");
         require(c.fullPrice > 0, "Content not for sale");
-        require(msg.value >= c.fullPrice, "Insufficient payment");
+        require(c.paymentToken == paymentToken, "Unsupported payment token");
         require(!purchases[msg.sender][_contentId], "Already purchased");
 
         purchases[msg.sender][_contentId] = true;
-        creators[c.creatorAddress].totalEarnings += msg.value;
+        creators[c.creatorAddress].totalEarnings += c.fullPrice;
 
-        (bool sent, ) = payable(c.creatorAddress).call{value: msg.value}("");
-        require(sent, "Failed to send Ether");
+        bool sent = IERC20(paymentToken).transferFrom(msg.sender, c.creatorAddress, c.fullPrice);
+        require(sent, "Token transfer failed");
 
         emit ContentPurchased(msg.sender, _contentId);
     }
@@ -252,7 +259,7 @@ contract CreatorHub {
         bool isFree,
         uint256 fullPrice,
         uint256 rentedPrice,
-        address paymentToken
+        address contentPaymentToken
     ) external returns (uint256) {
         require(creators[msg.sender].isRegistered, "Only registered creators can create content");
         require(bytes(metadataURI).length > 0, "Invalid metadataURI");
@@ -261,7 +268,7 @@ contract CreatorHub {
             require(fullPrice == 0, "Free content fullPrice must be 0");
             require(rentedPrice == 0, "Free content rentedPrice must be 0");
         } else {
-            require(paymentToken == address(0), "Only native ETH is supported");
+            require(contentPaymentToken == paymentToken, "Unsupported payment token");
             require(rentedPrice > 0, "rentedPrice must be > 0");
             require(fullPrice >= rentedPrice, "fullPrice must be >= rentedPrice");
         }
@@ -277,7 +284,7 @@ contract CreatorHub {
             isFree: isFree,
             fullPrice: fullPrice,
             rentedPrice: rentedPrice,
-            paymentToken: paymentToken,
+            paymentToken: contentPaymentToken,
             active: true
         });
         
@@ -291,7 +298,7 @@ contract CreatorHub {
         string memory metadataURI,
         uint256 fullPrice,
         uint256 rentedPrice,
-        address paymentToken,
+        address contentPaymentToken,
         bool isFree
     ) external {
         Content storage c = contents[contentId];
@@ -302,7 +309,7 @@ contract CreatorHub {
             require(fullPrice == 0, "Free content fullPrice must be 0");
             require(rentedPrice == 0, "Free content rentedPrice must be 0");
         } else {
-            require(paymentToken != address(0), "Payment token required");
+            require(contentPaymentToken == paymentToken, "Unsupported payment token");
             require(rentedPrice > 0, "rentedPrice must be > 0");
             require(fullPrice >= rentedPrice, "fullPrice must be >= rentedPrice");
         }
@@ -311,7 +318,7 @@ contract CreatorHub {
         c.isFree = isFree;
         c.fullPrice = fullPrice;
         c.rentedPrice = rentedPrice;
-        c.paymentToken = paymentToken;
+        c.paymentToken = contentPaymentToken;
     }
 
     function setContentActive(uint256 contentId, bool status) external {
