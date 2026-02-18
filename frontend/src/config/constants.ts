@@ -57,7 +57,7 @@ export type PaymentStateType = typeof PAYMENT_STATES[number];
 
 // Contracts
 import CreatorHubABI from './CreatorHub.json';
-export const CREATOR_HUB_ADDRESS = '0xc567c6112720d8190caa4e93086cd36e2ae01d37';
+export const CREATOR_HUB_ADDRESS = '0xCfd96d36B8A493478903cdCB971052A786E4ff40';
 export const CREATOR_HUB_ABI = CreatorHubABI.abi;
 
 // IPFS

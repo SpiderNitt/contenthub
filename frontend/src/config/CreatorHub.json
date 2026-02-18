@@ -1,6 +1,17 @@
 {
   "abi": [
     {
+      "type": "constructor",
+      "inputs": [
+        {
+          "name": "_paymentToken",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
+      "stateMutability": "nonpayable"
+    },
+    {
       "type": "function",
       "name": "allContentIds",
       "inputs": [
@@ -88,7 +99,7 @@
         }
       ],
       "outputs": [],
-      "stateMutability": "payable"
+      "stateMutability": "nonpayable"
     },
     {
       "type": "function",
@@ -251,7 +262,7 @@
           "internalType": "uint256"
         },
         {
-          "name": "paymentToken",
+          "name": "contentPaymentToken",
           "type": "address",
           "internalType": "address"
         }
@@ -500,6 +511,19 @@
     },
     {
       "type": "function",
+      "name": "paymentToken",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
       "name": "purchases",
       "inputs": [
         {
@@ -546,7 +570,7 @@
         }
       ],
       "outputs": [],
-      "stateMutability": "payable"
+      "stateMutability": "nonpayable"
     },
     {
       "type": "function",
@@ -614,7 +638,7 @@
         }
       ],
       "outputs": [],
-      "stateMutability": "payable"
+      "stateMutability": "nonpayable"
     },
     {
       "type": "function",
@@ -670,7 +694,7 @@
           "internalType": "uint256"
         },
         {
-          "name": "paymentToken",
+          "name": "contentPaymentToken",
           "type": "address",
           "internalType": "address"
         },
