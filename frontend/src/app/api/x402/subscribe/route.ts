@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomUUID } from 'crypto';
 import { verifyPrivyToken, unauthorizedResponse, verifyWalletOwnership } from '@/lib/auth';
-import { createPublicClient, http } from 'viem';
+import { createPublicClient, encodeFunctionData, http } from 'viem';
 import { baseSepolia } from 'viem/chains';
 import { isValidTransactionHash, isValidWalletAddress, isValidTierId } from '@/lib/validation';
-
-// Constants (Should be in env or config)
-const NATIVE_ETH = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"; // Representation for native ETH
-const CHAIN_ID = 84532;
-const MOCK_PRICE_WEI = "1000000000000000"; // 0.001 ETH
+import { CREATOR_HUB_ABI, CREATOR_HUB_ADDRESS, CHAIN_ID, USDC_SEPOLIA_ADDRESS } from '@/config/constants';
 
 // Setup Viem Client
 const publicClient = createPublicClient({
@@ -48,8 +45,7 @@ function checkRateLimit(identifier: string): boolean {
 async function verifyTransaction(
     txHash: string,
     expectedSender: string,
-    expectedRecipient: string,
-    minAmount: bigint
+    expectedCreator: string
 ): Promise<{ valid: boolean; error?: string }> {
     try {
         let tx, receipt;
@@ -74,16 +70,34 @@ async function verifyTransaction(
             return { valid: false, error: "Transaction sender does not match authenticated user" };
         }
 
-        if (tx.to?.toLowerCase() !== expectedRecipient.toLowerCase()) {
-            console.error(`[x402] Wrong recipient. Got ${tx.to}, expected ${expectedRecipient}`);
+        if (tx.to?.toLowerCase() !== CREATOR_HUB_ADDRESS.toLowerCase()) {
+            console.error(`[x402] Wrong recipient. Got ${tx.to}, expected ${CREATOR_HUB_ADDRESS}`);
             return { valid: false, error: "Invalid recipient" };
         }
 
-        if (tx.value < minAmount) {
-            return {
-                valid: false,
-                error: `Insufficient payment. Required: ${minAmount}, Got: ${tx.value}`
-            };
+        const expectedData = encodeFunctionData({
+            abi: CREATOR_HUB_ABI,
+            functionName: 'subscribe',
+            args: [expectedCreator as `0x${string}`]
+        });
+
+        if (tx.input.toLowerCase() !== expectedData.toLowerCase()) {
+            return { valid: false, error: 'Transaction call data mismatch' };
+        }
+
+        try {
+            const hasSubscription = await publicClient.readContract({
+                address: CREATOR_HUB_ADDRESS as `0x${string}`,
+                abi: CREATOR_HUB_ABI,
+                functionName: 'checkSubscription',
+                args: [expectedSender as `0x${string}`, expectedCreator as `0x${string}`]
+            }) as boolean;
+
+            if (!hasSubscription) {
+                return { valid: false, error: 'Subscription was not activated on-chain' };
+            }
+        } catch (err: any) {
+            return { valid: false, error: err.message || 'Subscription check failed' };
         }
 
         return { valid: true };
@@ -167,6 +181,27 @@ export async function POST(req: NextRequest) {
         }, { status: 400 });
     }
 
+    let subscriptionAmount: bigint;
+    try {
+        const creatorData = await publicClient.readContract({
+            address: CREATOR_HUB_ADDRESS as `0x${string}`,
+            abi: CREATOR_HUB_ABI,
+            functionName: 'creators',
+            args: [creatorAddress as `0x${string}`]
+        }) as readonly [string, `0x${string}`, boolean, bigint, bigint, bigint];
+
+        if (!creatorData[2]) {
+            return NextResponse.json({ error: 'Creator not registered' }, { status: 404 });
+        }
+
+        subscriptionAmount = creatorData[3];
+        if (subscriptionAmount <= 0n) {
+            return NextResponse.json({ error: 'Creator subscription price is invalid' }, { status: 400 });
+        }
+    } catch (err: any) {
+        return NextResponse.json({ error: err.message || 'Failed to fetch creator pricing' }, { status: 500 });
+    }
+
     const paymentProof = req.headers.get('X-PAYMENT');
 
     if (paymentProof) {
@@ -190,13 +225,12 @@ export async function POST(req: NextRequest) {
         const verification = await verifyTransaction(
             paymentProof,
             walletAddress,
-            creatorAddress,
-            BigInt(MOCK_PRICE_WEI)
+            creatorAddress
         );
 
         if (verification.valid) {
             const subscription = {
-                id: 'sub_' + Math.random().toString(36).substr(2, 9),
+                id: `sub_${randomUUID()}`,
                 creatorAddress,
                 tierId,
                 status: 'ACTIVE',
@@ -245,11 +279,12 @@ export async function POST(req: NextRequest) {
     // Return 402 Payment Required with x402 protocol headers
     const paymentMetadata = {
         chainId: CHAIN_ID,
-        tokenAddress: NATIVE_ETH,
-        amount: MOCK_PRICE_WEI,
-        recipient: creatorAddress,
+        tokenAddress: USDC_SEPOLIA_ADDRESS,
+        amount: subscriptionAmount.toString(),
+        recipient: CREATOR_HUB_ADDRESS,
         paymentParameter: {
-            minerOf: creatorAddress
+            minerOf: creatorAddress,
+            action: 'subscribe'
         }
     };
 
@@ -257,12 +292,12 @@ export async function POST(req: NextRequest) {
         status: 402,
         headers: {
             // x402 protocol headers
-            'X-Accept-Payment': 'native-transfer',
-            'X-Payment-Required': `${MOCK_PRICE_WEI} WEI on chain ${CHAIN_ID}`,
+            'X-Accept-Payment': 'erc20-transfer',
+            'X-Payment-Required': `${subscriptionAmount.toString()} USDC_BASE_UNITS on chain ${CHAIN_ID}`,
             'X-Payment-Chain-Id': CHAIN_ID.toString(),
-            'X-Payment-Token': NATIVE_ETH,
-            'X-Payment-Amount': MOCK_PRICE_WEI,
-            'X-Payment-Recipient': creatorAddress,
+            'X-Payment-Token': USDC_SEPOLIA_ADDRESS,
+            'X-Payment-Amount': subscriptionAmount.toString(),
+            'X-Payment-Recipient': CREATOR_HUB_ADDRESS,
             // Security headers
             'X-Content-Type-Options': 'nosniff',
             'X-Frame-Options': 'DENY'
