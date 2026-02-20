@@ -29,7 +29,8 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        const output = await lighthouse.upload([file], LIGHTHOUSE_API_KEY);
+        const buffer = Buffer.from(await file.arrayBuffer());
+        const output = await lighthouse.uploadBuffer(buffer, LIGHTHOUSE_API_KEY);
 
         if (!output?.data?.Hash) {
             return NextResponse.json(
