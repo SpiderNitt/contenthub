@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useWalletClient, useReadContract, usePublicClient } from 'wagmi';
-import { Upload, X, Image as ImageIcon, Video, Loader2, Coins, UserPlus } from 'lucide-react';
+import { Upload, Image as ImageIcon, Video, Loader2, Coins, UserPlus } from 'lucide-react';
 import { CREATOR_HUB_ADDRESS, CREATOR_HUB_ABI, USDC_DECIMALS, USDC_SEPOLIA_ADDRESS } from '@/config/constants';
 import { parseUnits } from 'viem';
 import * as Tabs from '@radix-ui/react-tabs';
@@ -100,27 +100,6 @@ export default function UploadPage() {
         }
     };
 
-    const uploadFile = async (file: File): Promise<string> => {
-        setProgress(`Uploading ${file.type.split('/')[0]}...`);
-        const token = await getAccessToken();
-        const formData = new FormData();
-        formData.append('file', file);
-
-        const res = await fetch('/api/upload', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}` },
-            body: formData
-        });
-
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({ error: 'Upload failed' }));
-            throw new Error(err.error || `Upload failed (${res.status})`);
-        }
-
-        const { cid } = await res.json();
-        return cid;
-    };
-
     const getLighthouseSignedMessage = async (walletAddress: string): Promise<string> => {
         const wallet = wallets[0];
         if (!wallet) {
@@ -128,7 +107,7 @@ export default function UploadPage() {
         }
 
         const provider = await wallet.getEthereumProvider();
-        const authMessage = await lighthouse.getAuthMessage(walletAddress).catch(() => kavach.getAuthMessage(walletAddress));
+        const authMessage = await lighthouse.getAuthMessage(walletAddress).catch(() => kavach.getAuthMessage(walletAddress)) as { message: string };
         const signedMessage = await provider.request({
             method: 'personal_sign',
             params: [authMessage.message, walletAddress]
@@ -150,6 +129,34 @@ export default function UploadPage() {
         return cid;
     };
 
+    const fetchLighthouseApiKey = async (address: string): Promise<string> => {
+        const token = await getAccessToken();
+        const keyResponse = await fetch(`/api/upload/key?walletAddress=${address}`, {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (!keyResponse.ok) {
+            const err = await keyResponse.json().catch(() => ({ error: 'Failed to fetch Lighthouse API key' }));
+            throw new Error(err.error || `Failed to fetch Lighthouse API key (${keyResponse.status})`);
+        }
+
+        const { apiKey } = await keyResponse.json() as { apiKey?: string };
+        if (!apiKey) {
+            throw new Error('Missing Lighthouse API key');
+        }
+        return apiKey;
+    };
+
+    const directUpload = async (fileToUpload: File, apiKey: string): Promise<string> => {
+        const output = await lighthouse.upload([fileToUpload], apiKey);
+        const cid = output?.data?.Hash;
+        if (!cid) {
+            throw new Error('Upload failed - no CID returned');
+        }
+        return cid;
+    };
+
     const handleUpload = async () => {
         if (!file || !thumbnail || !title || !walletClient) return;
 
@@ -160,9 +167,15 @@ export default function UploadPage() {
             const address = walletClient.account.address;
 
             if (activeTab === 'showcase') {
-                // Legacy Showcase Upload
-                const videoCID = await uploadFile(file);
-                const thumbnailCID = await uploadFile(thumbnail);
+                setProgress('Fetching upload credentials...');
+                const apiKey = await fetchLighthouseApiKey(address);
+
+                setProgress('Uploading video...');
+                const videoCID = await directUpload(file, apiKey);
+
+                setProgress('Uploading thumbnail...');
+                const thumbnailCID = await directUpload(thumbnail, apiKey);
+
                 setProgress('Confirming transaction...');
                 await walletClient.writeContract({
                     address: CREATOR_HUB_ADDRESS as `0x${string}`,
@@ -178,21 +191,7 @@ export default function UploadPage() {
                 }
 
                 setProgress('Fetching upload credentials...');
-                const token = await getAccessToken();
-                const keyResponse = await fetch(`/api/upload/key?walletAddress=${address}`, {
-                    method: 'GET',
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-
-                if (!keyResponse.ok) {
-                    const err = await keyResponse.json().catch(() => ({ error: 'Failed to fetch Lighthouse API key' }));
-                    throw new Error(err.error || `Failed to fetch Lighthouse API key (${keyResponse.status})`);
-                }
-
-                const { apiKey } = await keyResponse.json() as { apiKey?: string };
-                if (!apiKey) {
-                    throw new Error('Missing Lighthouse API key');
-                }
+                const apiKey = await fetchLighthouseApiKey(address);
 
                 setProgress('Signing encryption request...');
                 const signedMessage = await getLighthouseSignedMessage(address);
@@ -202,7 +201,7 @@ export default function UploadPage() {
                 const videoCID = getEncryptedUploadCid(encryptedUploadResponse);
 
                 setProgress('Uploading thumbnail...');
-                const thumbnailCID = await uploadFile(thumbnail);
+                const thumbnailCID = await directUpload(thumbnail, apiKey);
 
                 const nextContentId = await publicClient.readContract({
                     address: CREATOR_HUB_ADDRESS as `0x${string}`,
@@ -225,7 +224,7 @@ export default function UploadPage() {
 
                 const metadataBlob = new Blob([JSON.stringify(metadata)], { type: 'application/json' });
                 const metadataFile = new File([metadataBlob], 'metadata.json');
-                const metadataCID = await uploadFile(metadataFile);
+                const metadataCID = await directUpload(metadataFile, apiKey);
 
                 setProgress('Confirming transaction...');
 
